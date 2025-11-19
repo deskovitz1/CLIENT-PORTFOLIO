@@ -45,9 +45,24 @@ git clean -fd
    - Import your GitHub repository: `deskovitz1/v0-v37-rebuild`
    - Vercel will auto-detect Next.js settings
 
-2. **Environment Variables**:
-   - Add any required environment variables in Vercel dashboard
-   - They will be available in production automatically
+2. **Environment Variables** (CRITICAL):
+   
+   **Required Variables:**
+   - `BLOB_READ_WRITE_TOKEN` - Get from Vercel Dashboard → Storage → Blob → Settings → Tokens
+   - `POSTGRES_URL` - Auto-added when you create Postgres database
+   - `POSTGRES_PRISMA_URL` - Auto-added when you create Postgres database
+   - `POSTGRES_URL_NON_POOLING` - Auto-added when you create Postgres database
+   
+   **How to set them:**
+   1. Go to Vercel Dashboard → Your Project → Settings → Environment Variables
+   2. Add `BLOB_READ_WRITE_TOKEN` (Postgres URLs are auto-added)
+   3. Set for **all environments**: Production, Preview, Development
+   4. See `ENV_SETUP.md` for detailed instructions
+   
+   **Verify configuration:**
+   ```bash
+   pnpm verify-env
+   ```
 
 3. **Automatic Deployments**:
    - Every push to `main` triggers a production deployment
