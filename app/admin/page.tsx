@@ -42,16 +42,26 @@ export default function AdminPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    console.log("Form submitted", { 
+      hasVideo: !!formData.video, 
+      hasTitle: !!formData.title,
+      videoName: formData.video?.name,
+      title: formData.title 
+    })
+    
     if (!formData.video) {
       toast.error("Please select a video file")
+      console.error("No video file selected")
       return
     }
 
     if (!formData.title) {
       toast.error("Please enter a title")
+      console.error("No title entered")
       return
     }
 
+    console.log("Starting upload...")
     setUploading(true)
 
     try {
@@ -89,12 +99,20 @@ export default function AdminPage() {
       } else {
         toast.success("Video uploaded successfully")
       }
+      // Reset form
       setFormData({
         title: "",
         description: "",
         category: "",
         video: null,
       })
+      
+      // Reset file input
+      const fileInput = document.getElementById("video") as HTMLInputElement
+      if (fileInput) {
+        fileInput.value = ""
+      }
+      
       fetchVideos()
     } catch (error) {
       console.error("Error uploading video:", error)
@@ -163,8 +181,11 @@ export default function AdminPage() {
                   accept="video/*"
                   onChange={(e) => {
                     const file = e.target.files?.[0]
+                    console.log("File selected:", file?.name, file?.size)
                     if (file) {
-                      setFormData({ ...formData, video: file })
+                      setFormData((prev) => ({ ...prev, video: file }))
+                    } else {
+                      setFormData((prev) => ({ ...prev, video: null }))
                     }
                   }}
                   className="bg-gray-800 border-gray-700 text-white"
@@ -181,7 +202,11 @@ export default function AdminPage() {
                 <Input
                   id="title"
                   value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    console.log("Title changed:", value)
+                    setFormData((prev) => ({ ...prev, title: value }))
+                  }}
                   className="bg-gray-800 border-gray-700 text-white"
                   required
                 />
@@ -220,6 +245,14 @@ export default function AdminPage() {
                 type="submit"
                 disabled={uploading || !formData.video || !formData.title}
                 className="w-full bg-white text-black hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed relative z-10"
+                onClick={(e) => {
+                  console.log("Button clicked", {
+                    uploading,
+                    hasVideo: !!formData.video,
+                    hasTitle: !!formData.title,
+                    disabled: uploading || !formData.video || !formData.title
+                  })
+                }}
               >
                 {uploading ? (
                   <>
