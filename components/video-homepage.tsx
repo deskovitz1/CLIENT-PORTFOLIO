@@ -21,7 +21,8 @@ export function VideoHomepage() {
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video || videoState === "skipped") return
+    const currentVideoState = videoState
+    if (!video || currentVideoState === "skipped") return
 
     // Set video source only if not already set
     if (video.src !== INTRO_VIDEO_URL) {
@@ -31,8 +32,7 @@ export function VideoHomepage() {
 
     const handleLoadedMetadata = () => {
       // Check if video is still connected and state hasn't changed
-      const currentState = videoState
-      if (!video.isConnected || currentState === "skipped") return
+      if (!video.isConnected) return
       
       // Freeze on first frame
       video.currentTime = 0
