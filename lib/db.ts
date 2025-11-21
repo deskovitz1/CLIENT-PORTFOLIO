@@ -22,7 +22,7 @@ export async function getVideos(category?: string): Promise<Video[]> {
         where: { category },
         orderBy: { created_at: "desc" },
       });
-      return videos.map(v => ({
+      return videos.map((v: any) => ({
         ...v,
         file_size: v.file_size ? Number(v.file_size) : null,
         created_at: v.created_at.toISOString(),
@@ -33,7 +33,7 @@ export async function getVideos(category?: string): Promise<Video[]> {
     const videos = await prisma.video.findMany({
       orderBy: { created_at: "desc" },
     });
-    return videos.map(v => ({
+    return videos.map((v: any) => ({
       ...v,
       file_size: v.file_size ? Number(v.file_size) : null,
       created_at: v.created_at.toISOString(),

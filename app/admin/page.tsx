@@ -123,7 +123,12 @@ export default function AdminPage() {
         fileInput.value = ""
       }
       
-      fetchVideos()
+      // Refresh video list - wait a bit for database to be ready
+      console.log("Refreshing video list after upload...")
+      setTimeout(async () => {
+        await fetchVideos()
+        console.log("Video list refreshed")
+      }, 500)
     } catch (error) {
       console.error("Error uploading video:", error)
       toast.error(error instanceof Error ? error.message : "Failed to upload video")
