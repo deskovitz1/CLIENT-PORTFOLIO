@@ -127,11 +127,14 @@ export function VideoHomepage() {
       const url = category 
         ? `/api/videos?category=${encodeURIComponent(category)}`
         : "/api/videos"
+      console.log("Fetching videos from:", url)
       const response = await fetch(url)
       const data = await response.json()
+      console.log("Fetched videos:", data.videos?.length || 0, "videos")
       setVideos(data.videos || [])
     } catch (error) {
       console.error("Error fetching videos:", error)
+      setVideos([])
     }
   }
 
@@ -144,6 +147,13 @@ export function VideoHomepage() {
   const handleCategoryClick = async (category: string) => {
     setSelectedCategory(category)
     await fetchVideos(category)
+    setShowingRecentWork(true)
+  }
+
+  // Fetch all videos when showing the gallery (for uncategorized videos)
+  const handleShowAllVideos = async () => {
+    setSelectedCategory(null)
+    await fetchVideos() // Fetch all videos without category filter
     setShowingRecentWork(true)
   }
 
@@ -259,6 +269,12 @@ export function VideoHomepage() {
 
           <div className="flex-1 flex items-center justify-center px-6 md:px-12 lg:px-24">
             <div className="flex flex-col gap-3 w-full max-w-md ml-8">
+              <button
+                onClick={handleShowAllVideos}
+                className="group relative px-6 py-3 text-white text-sm md:text-base font-light tracking-wide text-center border border-white bg-transparent hover:bg-white hover:text-black transition-all duration-300"
+              >
+                {"ALL VIDEOS"}
+              </button>
               <button
                 onClick={handleRecentWorkClick}
                 className="group relative px-6 py-3 text-white text-sm md:text-base font-light tracking-wide text-center border border-white bg-transparent hover:bg-white hover:text-black transition-all duration-300"
