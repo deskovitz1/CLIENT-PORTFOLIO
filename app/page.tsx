@@ -2,18 +2,20 @@
 
 import { useRef, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-// Intro video URL is configured in app/config/intro.ts
-// To change the intro video, update INTRO_VIDEO_URL in that file
-import { INTRO_VIDEO_URL } from "@/app/config/intro"
+// Intro video URLs are configured in app/config/intro.ts
+import { SPLASH_VIDEO_URL, DOOR_VIDEO_URL } from "@/app/config/intro"
 
 export default function IntroLanding() {
-  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const [stage, setStage] = useState<"splash" | "door">("splash")
+  const [started, setStarted] = useState(false)
+  const splashVideoRef = useRef<HTMLVideoElement | null>(null)
+  const doorVideoRef = useRef<HTMLVideoElement | null>(null)
   const router = useRouter()
 
-  // Auto-play video when it loads and navigate when it ends
+  // Stage 1: Splash video (small, auto-plays, auto-navigates to door stage)
   useEffect(() => {
-    const video = videoRef.current
-    if (!video) return
+    const video = splashVideoRef.current
+    if (!video || stage !== "splash") return
 
     // Set playback speed to 1.25x (25% faster)
     video.playbackRate = 1.25
@@ -24,14 +26,14 @@ export default function IntroLanding() {
         await video.play()
       } catch (err: any) {
         if (err?.name !== "AbortError") {
-          console.error("Auto-play failed:", err)
+          console.error("Splash auto-play failed:", err)
         }
       }
     }
 
-    // Navigate to /videos when video ends
+    // Move to door stage when splash video ends
     const handleEnded = () => {
-      router.push("/videos")
+      setStage("door")
     }
 
     video.addEventListener("canplay", handleCanPlay)
@@ -41,30 +43,96 @@ export default function IntroLanding() {
       video.removeEventListener("canplay", handleCanPlay)
       video.removeEventListener("ended", handleEnded)
     }
-  }, [router])
+  }, [stage])
+
+  // Stage 2: Door video (full-screen, click to enter)
+  const handleEnter = () => {
+    if (started) return
+    setStarted(true)
+
+    const video = doorVideoRef.current
+    if (!video) return
+
+    video.play().catch((err: any) => {
+      if (err?.name === "AbortError") {
+        console.warn("Door video play aborted (AbortError), ignoring.")
+        return
+      }
+      console.error("Door video play failed:", err)
+    })
+  }
+
+  const handleDoorVideoEnded = () => {
+    router.push("/videos")
+  }
 
   const handleSkip = () => {
     router.push("/videos")
   }
 
-  return (
-    <div className="relative w-screen h-screen bg-black flex items-center justify-center">
-      {/* Small centered video - 20% of screen size (500% smaller) */}
-      <div className="w-[20vw] h-[20vh] max-w-[400px] max-h-[400px] min-w-[200px] min-h-[200px]">
-        <video
-          ref={videoRef}
-          src={INTRO_VIDEO_URL}
-          className="w-full h-full object-contain"
-          playsInline
-          muted={true}
-          controls={false}
-          autoPlay
-          onLoadedMetadata={(e) => {
-            // Set playback speed to 1.25x (25% faster) when video metadata loads
-            e.currentTarget.playbackRate = 1.25
-          }}
-        />
+  // Stage 1: Splash screen (small video)
+  if (stage === "splash") {
+    return (
+      <div className="relative w-screen h-screen bg-black flex items-center justify-center">
+        {/* Small centered video - 20% of screen size */}
+        <div className="w-[20vw] h-[20vh] max-w-[400px] max-h-[400px] min-w-[200px] min-h-[200px]">
+          <video
+            ref={splashVideoRef}
+            src={SPLASH_VIDEO_URL}
+            className="w-full h-full object-contain"
+            playsInline
+            muted={true}
+            controls={false}
+            autoPlay
+            onLoadedMetadata={(e) => {
+              e.currentTarget.playbackRate = 1.25
+            }}
+          />
+        </div>
+
+        {/* Skip intro button */}
+        <button
+          type="button"
+          onClick={handleSkip}
+          className="absolute bottom-6 right-6 px-4 py-2 text-sm border border-white/60 rounded-full bg-black/50 text-white hover:bg-white hover:text-black transition z-20"
+        >
+          Skip intro
+        </button>
       </div>
+    )
+  }
+
+  // Stage 2: Door video with "CLICK TO ENTER"
+  return (
+    <div className="relative w-screen h-screen bg-black overflow-hidden">
+      <video
+        ref={doorVideoRef}
+        src={DOOR_VIDEO_URL}
+        className="w-full h-full object-cover"
+        playsInline
+        muted={true}
+        controls={false}
+        onEnded={handleDoorVideoEnded}
+        onLoadedMetadata={(e) => {
+          e.currentTarget.playbackRate = 1.25
+        }}
+      />
+
+      {/* Overlay text before start */}
+      {!started && (
+        <button
+          type="button"
+          onClick={handleEnter}
+          className="absolute inset-0 flex flex-col items-center justify-center text-center text-white bg-black/40 z-10"
+        >
+          <span className="text-4xl md:text-5xl tracking-[0.3em] mb-3">
+            CLICK TO ENTER
+          </span>
+          <span className="text-lg opacity-80">
+            Click anywhere to begin
+          </span>
+        </button>
+      )}
 
       {/* Skip intro button - always visible */}
       <button
