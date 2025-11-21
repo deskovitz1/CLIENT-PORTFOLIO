@@ -46,11 +46,19 @@ export function VideoHomepage() {
         return
       }
       
-      // Freeze on first frame
-      video.currentTime = 0
-      video.pause()
-      setIsLoaded(true)
-      console.log("✅ Video frozen on first frame")
+      // Only freeze if we're still in frozen state
+      if (currentVideoState === "frozen") {
+        // Freeze on first frame
+        video.currentTime = 0
+        // Use requestAnimationFrame to avoid interrupting play()
+        requestAnimationFrame(() => {
+          if (video && videoState === "frozen") {
+            video.pause()
+            setIsLoaded(true)
+            console.log("✅ Video frozen on first frame")
+          }
+        })
+      }
     }
 
     const handleLoadedData = () => {
@@ -146,7 +154,10 @@ export function VideoHomepage() {
 
   const handlePlayVideo = async () => {
     const video = videoRef.current
-    if (!video || videoState !== "frozen") return
+    if (!video || videoState !== "frozen") {
+      console.log("⚠️ Cannot play: video=", !!video, "state=", videoState)
+      return
+    }
 
     // Check if video is still in the DOM
     if (!video.isConnected) {
@@ -155,22 +166,43 @@ export function VideoHomepage() {
     }
 
     try {
+      // Set state first to prevent pause() from being called
       setVideoState("playing")
       
-      // Double-check video is still valid before playing
-      if (!videoRef.current || !videoRef.current.isConnected) {
-        console.warn("⚠️ Video removed before play, aborting")
+      // Wait a tiny bit to ensure state update is processed
+      await new Promise(resolve => setTimeout(resolve, 10))
+      
+      // Double-check video is still valid and state hasn't changed
+      if (!videoRef.current || !videoRef.current.isConnected || videoState !== "playing") {
+        console.warn("⚠️ Video state changed before play, aborting")
         setVideoState("frozen")
         return
       }
 
-      await video.play()
+      // Ensure video is at the start
+      if (videoRef.current.currentTime !== 0) {
+        videoRef.current.currentTime = 0
+      }
+
+      await videoRef.current.play()
       console.log("✅ Video playing")
     } catch (error: any) {
-      // Handle AbortError specifically (video was removed)
-      if (error.name === "AbortError" || error.message?.includes("interrupted")) {
-        console.warn("⚠️ Video play was interrupted (video may have been removed)")
-        setVideoState("frozen")
+      // Handle AbortError specifically (video was paused/interrupted)
+      if (error.name === "AbortError" || error.message?.includes("interrupted") || error.message?.includes("pause")) {
+        console.warn("⚠️ Video play was interrupted:", error.message)
+        // Try again after a short delay
+        setTimeout(async () => {
+          const video = videoRef.current
+          if (video && videoState === "playing") {
+            try {
+              await video.play()
+              console.log("✅ Video playing after retry")
+            } catch (retryError) {
+              console.error("❌ Video playback retry failed:", retryError)
+              setVideoState("frozen")
+            }
+          }
+        }, 100)
         return
       }
       console.error("❌ Video playback failed:", error)
@@ -244,10 +276,16 @@ export function VideoHomepage() {
         muted
         onLoadedMetadata={() => {
           const video = videoRef.current
-          if (video && videoState !== "skipped") {
+          if (video && videoState === "frozen") {
+            // Only set time, don't pause if we're about to play
             video.currentTime = 0
-            video.pause()
-            console.log("📹 Video metadata loaded via onLoadedMetadata, frozen at start")
+            // Use requestAnimationFrame to avoid race conditions
+            requestAnimationFrame(() => {
+              if (video && videoState === "frozen") {
+                video.pause()
+                console.log("📹 Video metadata loaded via onLoadedMetadata, frozen at start")
+              }
+            })
           }
         }}
         onLoadedData={() => {
