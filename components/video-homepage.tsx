@@ -80,10 +80,20 @@ export function VideoHomepage() {
   }
 
   const handleVideoClick = async (video: Video) => {
+    // Use the exact same URL logic as the card
+    const videoUrl = video.video_url || video.blob_url
+    
+    console.log("Selected video:", video)
+    console.log("Video URL for modal:", videoUrl)
+    console.log("video.video_url:", video.video_url)
+    console.log("video.blob_url:", video.blob_url)
+    
     addDebugLog("info", "Video clicked", { 
       id: video.id, 
       title: video.title,
-      url: video.video_url || video.blob_url 
+      video_url: video.video_url,
+      blob_url: video.blob_url,
+      final_url: videoUrl
     })
     
     // Pause any hover previews first
