@@ -169,8 +169,12 @@ export function VideoHomepage() {
                       // Use requestAnimationFrame to avoid interrupting play()
                       requestAnimationFrame(() => {
                         if (videoEl.isConnected) {
-                          videoEl.pause().catch(() => {})
-                          videoEl.currentTime = 0
+                          try {
+                            videoEl.pause()
+                            videoEl.currentTime = 0
+                          } catch (error) {
+                            // Silently handle pause errors
+                          }
                         }
                       })
                     }}
