@@ -31,16 +31,25 @@ export default function IntroLanding() {
       }
     }
 
-    // Move to door stage when splash video ends
+    // Cut 2.5 seconds off the end - transition when 2.5 seconds before end
+    const handleTimeUpdate = () => {
+      if (video.duration && video.currentTime >= video.duration - 2.5) {
+        setStage("door")
+      }
+    }
+
+    // Fallback: also handle ended event in case timeupdate doesn't fire
     const handleEnded = () => {
       setStage("door")
     }
 
     video.addEventListener("canplay", handleCanPlay)
+    video.addEventListener("timeupdate", handleTimeUpdate)
     video.addEventListener("ended", handleEnded)
 
     return () => {
       video.removeEventListener("canplay", handleCanPlay)
+      video.removeEventListener("timeupdate", handleTimeUpdate)
       video.removeEventListener("ended", handleEnded)
     }
   }, [stage])
