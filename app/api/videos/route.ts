@@ -5,15 +5,23 @@ import { put } from "@vercel/blob";
 // GET all videos
 export async function GET(request: NextRequest) {
   try {
+    console.log("GET /api/videos - Fetching videos");
     const searchParams = request.nextUrl.searchParams;
     const category = searchParams.get("category");
     
+    console.log("Category filter:", category || "none");
     const videos = await getVideos(category || undefined);
+    console.log(`Found ${videos.length} video(s)`);
     return NextResponse.json({ videos });
   } catch (error) {
     console.error("Error fetching videos:", error);
+    console.error("Error details:", error instanceof Error ? error.message : String(error));
+    console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace");
     return NextResponse.json(
-      { error: "Failed to fetch videos" },
+      { 
+        error: "Failed to fetch videos",
+        details: error instanceof Error ? error.message : String(error)
+      },
       { status: 500 }
     );
   }

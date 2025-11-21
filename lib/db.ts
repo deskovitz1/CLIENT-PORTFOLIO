@@ -16,16 +16,33 @@ export interface Video {
 }
 
 export async function getVideos(category?: string): Promise<Video[]> {
-  if (category) {
-    return prisma.video.findMany({
-      where: { category },
+  try {
+    if (category) {
+      const videos = await prisma.video.findMany({
+        where: { category },
+        orderBy: { created_at: "desc" },
+      });
+      return videos.map(v => ({
+        ...v,
+        file_size: v.file_size ? Number(v.file_size) : null,
+        created_at: v.created_at.toISOString(),
+        updated_at: v.updated_at.toISOString(),
+      })) as Video[];
+    }
+    
+    const videos = await prisma.video.findMany({
       orderBy: { created_at: "desc" },
-    }) as Promise<Video[]>;
+    });
+    return videos.map(v => ({
+      ...v,
+      file_size: v.file_size ? Number(v.file_size) : null,
+      created_at: v.created_at.toISOString(),
+      updated_at: v.updated_at.toISOString(),
+    })) as Video[];
+  } catch (error) {
+    console.error("Error in getVideos:", error);
+    throw error;
   }
-  
-  return prisma.video.findMany({
-    orderBy: { created_at: "desc" },
-  }) as Promise<Video[]>;
 }
 
 export async function getVideoById(id: number): Promise<Video | null> {
