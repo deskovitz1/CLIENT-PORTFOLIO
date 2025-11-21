@@ -15,9 +15,13 @@ export interface Video {
   updated_at: string;
 }
 
-// Intro video URL and filename - excluded from regular video listings
-const INTRO_VIDEO_URL = "https://f8itx2l7pd6t7gmj.public.blob.vercel-storage.com/smaller%20intro%20video-2OLEoXDlOrPov0XwuKOqHmFHls7C3P.mp4"
-const INTRO_VIDEO_FILENAME = "smaller intro video"
+// Intro video filtering configuration
+// NOTE: This is used to EXCLUDE the intro video from the regular video grid listings
+// The actual intro video URL is configured in app/config/intro.ts
+// 
+// To update: Change the filename pattern below to match your intro video's filename
+// This helps filter it out from the /videos page grid
+const INTRO_VIDEO_FILENAME = "WEBSITE VID heaven"
 
 export async function getVideos(category?: string, excludeIntro: boolean = true): Promise<Video[]> {
   try {
@@ -30,28 +34,15 @@ export async function getVideos(category?: string, excludeIntro: boolean = true)
       conditions.push({ category })
     }
     
-    // Exclude intro video from regular listings (by filename or URL)
-    // Use OR to exclude if ANY of these match, then negate with NOT
+    // Exclude intro video from regular listings (by filename)
+    // The intro video is configured in app/config/intro.ts
+    // We filter it out here so it doesn't appear in the /videos grid
     if (excludeIntro) {
       conditions.push({
         NOT: {
-          OR: [
-            {
-              file_name: {
-                contains: INTRO_VIDEO_FILENAME,
-              },
-            },
-            {
-              blob_url: {
-                contains: INTRO_VIDEO_URL,
-              },
-            },
-            {
-              video_url: {
-                contains: INTRO_VIDEO_URL,
-              },
-            },
-          ],
+          file_name: {
+            contains: INTRO_VIDEO_FILENAME,
+          },
         },
       })
     }

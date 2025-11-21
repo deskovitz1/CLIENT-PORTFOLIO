@@ -2,6 +2,8 @@
 
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
+// Intro video URL is configured in app/config/intro.ts
+// To change the intro video, update INTRO_VIDEO_URL in that file
 import { INTRO_VIDEO_URL } from "@/app/config/intro"
 
 export default function IntroLanding() {
