@@ -23,11 +23,16 @@ export function VideoHomepage() {
     const video = videoRef.current
     if (!video || videoState === "skipped") return
 
-    // Set video source
-    video.src = INTRO_VIDEO_URL
-    video.load()
+    // Set video source only if not already set
+    if (video.src !== INTRO_VIDEO_URL) {
+      video.src = INTRO_VIDEO_URL
+      video.load()
+    }
 
     const handleLoadedMetadata = () => {
+      // Check if video is still connected and state hasn't changed
+      if (!video.isConnected || videoState === "skipped") return
+      
       // Freeze on first frame
       video.currentTime = 0
       video.pause()
@@ -36,7 +41,7 @@ export function VideoHomepage() {
     }
 
     const handleTimeUpdate = () => {
-      if (videoState !== "playing") return
+      if (videoState !== "playing" || !video.isConnected) return
 
       // Detect when door opens - adjust this time based on your video
       const doorOpenTime = 8 // seconds - adjust this to match when door opens in your video
@@ -58,14 +63,20 @@ export function VideoHomepage() {
       })
     }
 
-    video.addEventListener("loadedmetadata", handleLoadedMetadata)
-    video.addEventListener("timeupdate", handleTimeUpdate)
-    video.addEventListener("error", handleError)
+    // Only add listeners if video is connected
+    if (video.isConnected) {
+      video.addEventListener("loadedmetadata", handleLoadedMetadata)
+      video.addEventListener("timeupdate", handleTimeUpdate)
+      video.addEventListener("error", handleError)
+    }
 
     return () => {
-      video.removeEventListener("loadedmetadata", handleLoadedMetadata)
-      video.removeEventListener("timeupdate", handleTimeUpdate)
-      video.removeEventListener("error", handleError)
+      // Safely remove listeners
+      if (video.isConnected) {
+        video.removeEventListener("loadedmetadata", handleLoadedMetadata)
+        video.removeEventListener("timeupdate", handleTimeUpdate)
+        video.removeEventListener("error", handleError)
+      }
     }
   }, [videoState])
 
@@ -112,11 +123,31 @@ export function VideoHomepage() {
     const video = videoRef.current
     if (!video || videoState !== "frozen") return
 
+    // Check if video is still in the DOM
+    if (!video.isConnected) {
+      console.warn("⚠️ Video element not in DOM, cannot play")
+      return
+    }
+
     try {
       setVideoState("playing")
+      
+      // Double-check video is still valid before playing
+      if (!videoRef.current || !videoRef.current.isConnected) {
+        console.warn("⚠️ Video removed before play, aborting")
+        setVideoState("frozen")
+        return
+      }
+
       await video.play()
       console.log("✅ Video playing")
-    } catch (error) {
+    } catch (error: any) {
+      // Handle AbortError specifically (video was removed)
+      if (error.name === "AbortError" || error.message?.includes("interrupted")) {
+        console.warn("⚠️ Video play was interrupted (video may have been removed)")
+        setVideoState("frozen")
+        return
+      }
       console.error("❌ Video playback failed:", error)
       setVideoState("frozen")
     }
@@ -172,40 +203,40 @@ export function VideoHomepage() {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-black">
-      {/* Main Video Element */}
-      {videoState !== "skipped" && (
-        <video
-          ref={videoRef}
-          className="absolute inset-0 h-full w-full object-cover transition-all duration-300"
-          style={{
-            filter: `blur(${blurAmount}px)`,
-            transform: blurAmount > 0 ? "scale(1.05)" : "scale(1)",
-          }}
-          preload="metadata"
-          playsInline
-          muted
-          onLoadedMetadata={() => {
-            const video = videoRef.current
-            if (video) {
-              video.currentTime = 0
-              video.pause()
-              console.log("📹 Video metadata loaded, frozen at start")
-            }
-          }}
-          onError={(e) => {
-            const video = e.currentTarget
-            console.error("❌ Video element error:", {
-              error: video.error,
-              code: video.error?.code,
-              message: video.error?.message,
-              src: video.src,
-            })
-          }}
-        >
-          <source src={INTRO_VIDEO_URL} type="video/mp4" />
-          Your browser does not support the video tag.
-        </video>
-      )}
+      {/* Main Video Element - Always render but hide when skipped */}
+      <video
+        ref={videoRef}
+        className="absolute inset-0 h-full w-full object-cover transition-all duration-300"
+        style={{
+          filter: `blur(${blurAmount}px)`,
+          transform: blurAmount > 0 ? "scale(1.05)" : "scale(1)",
+          opacity: videoState === "skipped" ? 0 : 1,
+          pointerEvents: videoState === "skipped" ? "none" : "auto",
+        }}
+        preload="metadata"
+        playsInline
+        muted
+        onLoadedMetadata={() => {
+          const video = videoRef.current
+          if (video && videoState !== "skipped") {
+            video.currentTime = 0
+            video.pause()
+            console.log("📹 Video metadata loaded, frozen at start")
+          }
+        }}
+        onError={(e) => {
+          const video = e.currentTarget
+          console.error("❌ Video element error:", {
+            error: video.error,
+            code: video.error?.code,
+            message: video.error?.message,
+            src: video.src,
+          })
+        }}
+      >
+        <source src={INTRO_VIDEO_URL} type="video/mp4" />
+        Your browser does not support the video tag.
+      </video>
 
       {/* Background when skipped */}
       {videoState === "skipped" && (
