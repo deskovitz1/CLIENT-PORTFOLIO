@@ -16,23 +16,11 @@ const requiredEnvVars = {
     getFrom: "Vercel Dashboard → Storage → Blob → Settings → Tokens",
   },
   
-  // Vercel Postgres (auto-added by Vercel, but needed for local dev)
-  POSTGRES_URL: {
-    description: "Vercel Postgres connection URL",
+  // Prisma Database
+  DATABASE_URL: {
+    description: "Prisma Accelerate connection URL",
     required: true,
-    getFrom: "Vercel Dashboard → Storage → Postgres → Connection String",
-  },
-  
-  POSTGRES_PRISMA_URL: {
-    description: "Vercel Postgres Prisma connection URL",
-    required: false, // Optional, but recommended
-    getFrom: "Vercel Dashboard → Storage → Postgres → Connection String",
-  },
-  
-  POSTGRES_URL_NON_POOLING: {
-    description: "Vercel Postgres non-pooling connection URL",
-    required: false, // Optional, but recommended
-    getFrom: "Vercel Dashboard → Storage → Postgres → Connection String",
+    getFrom: "Prisma Dashboard → Your Database → Connection String",
   },
 };
 
@@ -58,8 +46,8 @@ function verifyEnvironment() {
         console.warn(`⚠️  ${key} may have incorrect format (should start with 'vercel_blob_rw_')`);
       }
       
-      if (key.includes("POSTGRES_URL") && !value.includes("postgres://")) {
-        console.warn(`⚠️  ${key} may have incorrect format (should be a postgres:// URL)`);
+      if (key === "DATABASE_URL" && !value.startsWith("prisma+postgres://")) {
+        console.warn(`⚠️  ${key} may have incorrect format (should start with 'prisma+postgres://' for Prisma Accelerate)`);
       }
     } else {
       if (config.required) {
@@ -116,33 +104,26 @@ function verifyEnvironment() {
 
 // Test database connection
 async function testDatabaseConnection() {
-  if (!process.env.POSTGRES_URL) {
-    console.log("⏭️  Skipping database connection test (POSTGRES_URL not set)\n");
+  if (!process.env.DATABASE_URL) {
+    console.log("⏭️  Skipping database connection test (DATABASE_URL not set)\n");
     return;
   }
   
   console.log("🔌 Testing database connection...\n");
   
   try {
-    const { sql } = await import("@vercel/postgres");
-    const result = await sql`SELECT NOW() as current_time, version() as pg_version`;
+    const { prisma } = await import("../lib/prisma");
+    
+    // Test connection with a simple query
+    const result = await prisma.$queryRaw`SELECT NOW() as current_time, version() as pg_version`;
+    const row = Array.isArray(result) ? result[0] : result;
     console.log("✅ Database connection successful!");
-    console.log(`   PostgreSQL version: ${result.rows[0].pg_version}`);
-    console.log(`   Current time: ${result.rows[0].current_time}\n`);
+    console.log(`   PostgreSQL version: ${(row as any).pg_version}`);
+    console.log(`   Current time: ${(row as any).current_time}\n`);
     
-    // Check if videos table exists
-    const tableCheck = await sql`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_name = 'videos'
-      ) as table_exists
-    `;
-    
-    if (tableCheck.rows[0].table_exists) {
-      console.log("✅ Videos table exists\n");
-    } else {
-      console.log("⚠️  Videos table does not exist. Run the migration from lib/db/schema.sql\n");
-    }
+    // Check if videos table exists by trying to count
+    const videoCount = await prisma.video.count();
+    console.log(`✅ Videos table exists (${videoCount} video(s) found)\n`);
     
     return true;
   } catch (error) {

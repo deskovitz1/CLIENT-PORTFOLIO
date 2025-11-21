@@ -141,7 +141,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white p-8">
+    <div className="min-h-screen bg-black text-white p-8 relative z-10">
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-light mb-8">Video Admin</h1>
 
@@ -219,7 +219,7 @@ export default function AdminPage() {
               <Button
                 type="submit"
                 disabled={uploading || !formData.video || !formData.title}
-                className="w-full bg-white text-black hover:bg-gray-200"
+                className="w-full bg-white text-black hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed relative z-10"
               >
                 {uploading ? (
                   <>
@@ -233,6 +233,12 @@ export default function AdminPage() {
                   </>
                 )}
               </Button>
+              {(!formData.video || !formData.title) && (
+                <p className="text-xs text-gray-500 mt-2">
+                  {!formData.video && "Please select a video file. "}
+                  {!formData.title && "Please enter a title."}
+                </p>
+              )}
             </form>
           </CardContent>
         </Card>

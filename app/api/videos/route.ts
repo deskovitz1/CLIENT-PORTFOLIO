@@ -62,8 +62,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ video }, { status: 201 });
   } catch (error) {
     console.error("Error uploading video:", error);
+  
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown upload error";
+  
     return NextResponse.json(
-      { error: "Failed to upload video" },
+      { error: errorMessage },
       { status: 500 }
     );
   }

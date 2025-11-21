@@ -1,4 +1,4 @@
-import { sql } from "@vercel/postgres";
+import { prisma } from "@/lib/prisma";
 
 export interface Video {
   id: number;
@@ -17,28 +17,22 @@ export interface Video {
 
 export async function getVideos(category?: string): Promise<Video[]> {
   if (category) {
-    const result = await sql`
-      SELECT * FROM videos 
-      WHERE category = ${category}
-      ORDER BY created_at DESC
-    `;
-    return result.rows as Video[];
+    return prisma.video.findMany({
+      where: { category },
+      orderBy: { created_at: "desc" },
+    }) as Promise<Video[]>;
   }
   
-  const result = await sql`
-    SELECT * FROM videos 
-    ORDER BY created_at DESC
-  `;
-  return result.rows as Video[];
+  return prisma.video.findMany({
+    orderBy: { created_at: "desc" },
+  }) as Promise<Video[]>;
 }
 
 export async function getVideoById(id: number): Promise<Video | null> {
-  const result = await sql`
-    SELECT * FROM videos 
-    WHERE id = ${id}
-    LIMIT 1
-  `;
-  return result.rows[0] as Video || null;
+  const video = await prisma.video.findUnique({
+    where: { id },
+  });
+  return video as Video | null;
 }
 
 export async function createVideo(data: {
@@ -52,20 +46,32 @@ export async function createVideo(data: {
   file_size?: number;
   duration?: number;
 }): Promise<Video> {
-  const result = await sql`
-    INSERT INTO videos (title, description, category, video_url, thumbnail_url, blob_url, file_name, file_size, duration)
-    VALUES (${data.title}, ${data.description || null}, ${data.category || null}, ${data.video_url}, ${data.thumbnail_url || null}, ${data.blob_url}, ${data.file_name}, ${data.file_size || null}, ${data.duration || null})
-    RETURNING *
-  `;
-  return result.rows[0] as Video;
+  const video = await prisma.video.create({
+    data: {
+      title: data.title,
+      description: data.description || null,
+      category: data.category || null,
+      video_url: data.video_url,
+      thumbnail_url: data.thumbnail_url || null,
+      blob_url: data.blob_url,
+      file_name: data.file_name,
+      file_size: data.file_size ? BigInt(data.file_size) : null,
+      duration: data.duration || null,
+    },
+  });
+  return {
+    ...video,
+    file_size: video.file_size ? Number(video.file_size) : null,
+  } as Video;
 }
 
 export async function deleteVideo(id: number): Promise<boolean> {
-  const result = await sql`
-    DELETE FROM videos 
-    WHERE id = ${id}
-    RETURNING id
-  `;
-  return result.rowCount > 0;
+  try {
+    await prisma.video.delete({
+      where: { id },
+    });
+    return true;
+  } catch (error) {
+    return false;
+  }
 }
-
