@@ -279,16 +279,16 @@ export function VideoHomepage() {
 
       {/* Click to Enter Overlay - Only shown when frozen */}
       {videoState === "frozen" && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center">
+        <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
           <div
             onClick={handlePlayVideo}
-            className="absolute inset-0 flex items-center justify-center cursor-pointer bg-black/20 hover:bg-black/10 transition-colors"
+            className="absolute inset-0 flex items-center justify-center cursor-pointer bg-black/10 hover:bg-black/5 transition-colors pointer-events-auto"
           >
             <div className="text-center">
-              <p className="text-white text-2xl md:text-3xl font-light tracking-widest animate-pulse mb-2">
+              <p className="text-white text-2xl md:text-3xl font-light tracking-widest animate-pulse mb-2 drop-shadow-lg">
                 CLICK TO ENTER
               </p>
-              <p className="text-white/60 text-sm md:text-base font-light tracking-wide">
+              <p className="text-white/80 text-sm md:text-base font-light tracking-wide drop-shadow-lg">
                 Click anywhere to begin
               </p>
             </div>
@@ -297,7 +297,7 @@ export function VideoHomepage() {
           {/* SKIP Button - Top Right */}
           <button
             onClick={handleSkip}
-            className="absolute top-6 right-6 md:top-8 md:right-8 z-40 px-4 py-2 text-white text-xs md:text-sm font-light tracking-wide border border-white/40 bg-black/40 backdrop-blur-sm hover:bg-white hover:text-black transition-all duration-300"
+            className="absolute top-6 right-6 md:top-8 md:right-8 z-40 px-4 py-2 text-white text-xs md:text-sm font-light tracking-wide border border-white/40 bg-black/40 backdrop-blur-sm hover:bg-white hover:text-black transition-all duration-300 pointer-events-auto"
           >
             SKIP
           </button>
