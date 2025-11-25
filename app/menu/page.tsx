@@ -32,7 +32,7 @@ function MenuButton({
 export default function MainMenuPage() {
   return (
     <main className="min-h-screen bg-black text-white flex flex-col items-center justify-center gap-12">
-      <h1 className="text-2xl font-bold opacity-90" style={{ fontFamily: 'Helvetica, Arial, sans-serif', letterSpacing: '-60px' }}>CIRCUS17</h1>
+      <h1 className="text-2xl font-bold opacity-90" style={{ fontFamily: 'Helvetica, Arial, sans-serif', letterSpacing: '-0.06em' }}>CIRCUS17</h1>
       <div className="flex flex-col gap-4">
         <MenuButton label="Recent Work" category="recent-work" />
         <MenuButton label="Music" category="music-video" />
