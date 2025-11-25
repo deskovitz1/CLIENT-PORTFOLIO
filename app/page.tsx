@@ -132,13 +132,10 @@ export default function IntroLanding() {
         <button
           type="button"
           onClick={handleEnter}
-          className="absolute inset-0 flex flex-col items-center justify-center text-center text-white bg-black/40 z-10"
+          className="absolute inset-0 flex items-center justify-center text-center text-white bg-black/20 z-10"
         >
-          <span className="text-4xl md:text-5xl tracking-[0.3em] mb-3">
+          <span className="text-sm md:text-base tracking-[0.2em] font-light opacity-90 hover:opacity-100 transition-opacity">
             CLICK TO ENTER
-          </span>
-          <span className="text-lg opacity-80">
-            Click anywhere to begin
           </span>
         </button>
       )}
