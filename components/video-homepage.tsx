@@ -384,7 +384,7 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
                           }}
                           src={videoUrl}
                           className="w-full h-full object-cover"
-                          preload="metadata"
+                          preload="auto"
                           muted
                           playsInline
                           onLoadedMetadata={(e) => handleVideoLoad(featuredVideo.id, e)}
@@ -405,7 +405,22 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
                             if (!videoEl.isConnected) return
                             
                             try {
-                              videoEl.currentTime = 1
+                              // Wait for video to be ready before playing
+                              if (videoEl.readyState < 3) {
+                                await new Promise((resolve) => {
+                                  const handleCanPlay = () => {
+                                    videoEl.removeEventListener("canplay", handleCanPlay)
+                                    resolve(undefined)
+                                  }
+                                  videoEl.addEventListener("canplay", handleCanPlay)
+                                })
+                              }
+                              
+                              // Set to start slightly after beginning for smoother playback
+                              if (videoEl.currentTime < 0.5) {
+                                videoEl.currentTime = 0.5
+                              }
+                              
                               await videoEl.play()
                               addDebugLog("success", `Video ${featuredVideo.id} hover preview playing`)
                             } catch (error: any) {
@@ -514,7 +529,7 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
                             }}
                             src={videoUrl}
                             className="w-full h-full object-cover"
-                            preload="metadata"
+                            preload="auto"
                             muted
                             playsInline
                             onLoadedMetadata={(e) => handleVideoLoad(video.id, e)}
@@ -524,7 +539,22 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
                               if (!videoEl.isConnected) return
                               
                               try {
-                                videoEl.currentTime = 1
+                                // Wait for video to be ready before playing
+                                if (videoEl.readyState < 3) {
+                                  await new Promise((resolve) => {
+                                    const handleCanPlay = () => {
+                                      videoEl.removeEventListener("canplay", handleCanPlay)
+                                      resolve(undefined)
+                                    }
+                                    videoEl.addEventListener("canplay", handleCanPlay)
+                                  })
+                                }
+                                
+                                // Set to start slightly after beginning for smoother playback
+                                if (videoEl.currentTime < 0.5) {
+                                  videoEl.currentTime = 0.5
+                                }
+                                
                                 await videoEl.play()
                               } catch (error: any) {
                                 // Silently handle AbortError

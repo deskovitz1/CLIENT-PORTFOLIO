@@ -3,14 +3,51 @@
 import { useRef, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 // Intro video URLs are configured in app/config/intro.ts
-import { SPLASH_VIDEO_URL, DOOR_VIDEO_URL } from "@/app/config/intro"
+import { SPLASH_VIDEO_URL, ENTER_VIDEO_URL } from "@/app/config/intro"
 
 export default function IntroLanding() {
   const [stage, setStage] = useState<"splash" | "door">("splash")
   const [started, setStarted] = useState(false)
+  const [doorVideoReady, setDoorVideoReady] = useState(false)
   const splashVideoRef = useRef<HTMLVideoElement | null>(null)
   const doorVideoRef = useRef<HTMLVideoElement | null>(null)
+  const preloadVideoRef = useRef<HTMLVideoElement | null>(null)
   const router = useRouter()
+
+  // Aggressive preloading: Start loading door video immediately on mount
+  useEffect(() => {
+    const preloadVideo = preloadVideoRef.current
+    if (!preloadVideo) return
+
+    // Force aggressive preloading
+    preloadVideo.preload = "auto"
+    preloadVideo.load() // Force load start
+
+    const handleCanPlayThrough = () => {
+      console.log("Door video preloaded and ready!")
+      setDoorVideoReady(true)
+    }
+
+    const handleProgress = () => {
+      const video = preloadVideo
+      if (video.buffered.length > 0) {
+        const bufferedEnd = video.buffered.end(video.buffered.length - 1)
+        const duration = video.duration
+        if (duration > 0) {
+          const percentLoaded = (bufferedEnd / duration) * 100
+          console.log(`Door video loading: ${percentLoaded.toFixed(1)}%`)
+        }
+      }
+    }
+
+    preloadVideo.addEventListener("canplaythrough", handleCanPlayThrough)
+    preloadVideo.addEventListener("progress", handleProgress)
+
+    return () => {
+      preloadVideo.removeEventListener("canplaythrough", handleCanPlayThrough)
+      preloadVideo.removeEventListener("progress", handleProgress)
+    }
+  }, [])
 
   // Stage 1: Splash video (small, auto-plays, auto-navigates to door stage)
   useEffect(() => {
@@ -57,32 +94,67 @@ export default function IntroLanding() {
   // Stage 2: Door video (full-screen, click to enter)
   const handleEnter = () => {
     if (started) return
-    setStarted(true)
 
     const video = doorVideoRef.current
     if (!video) return
 
-    video.play().catch((err: any) => {
-      if (err?.name === "AbortError") {
-        console.warn("Door video play aborted (AbortError), ignoring.")
-        return
+    // Check if video is ready to play
+    if (video.readyState >= 3) {
+      // Video is ready, start playing
+      setStarted(true)
+      video.playbackRate = 1.0
+      video.play().catch((err: any) => {
+        if (err?.name === "AbortError") {
+          console.warn("Door video play aborted (AbortError), ignoring.")
+          return
+        }
+        console.error("Door video play failed:", err)
+      })
+    } else {
+      // Video not ready yet, wait for it
+      console.log("Video not ready yet, waiting...")
+      const checkReady = () => {
+        if (video.readyState >= 3) {
+          setStarted(true)
+          video.playbackRate = 1.0
+          video.play().catch((err: any) => {
+            if (err?.name === "AbortError") {
+              console.warn("Door video play aborted (AbortError), ignoring.")
+              return
+            }
+            console.error("Door video play failed:", err)
+          })
+        } else {
+          setTimeout(checkReady, 100)
+        }
       }
-      console.error("Door video play failed:", err)
-    })
+      checkReady()
+    }
   }
 
   const handleDoorVideoEnded = () => {
-    router.push("/videos")
+    console.log("Door video fully completed, navigating to menu")
+    router.push("/menu")
   }
 
   const handleSkip = () => {
-    router.push("/videos")
+    router.push("/menu")
   }
 
   // Stage 1: Splash screen (small video)
   if (stage === "splash") {
     return (
       <div className="relative w-screen h-screen bg-black flex items-center justify-center">
+        {/* Hidden preload video - starts loading immediately */}
+        <video
+          ref={preloadVideoRef}
+          src={ENTER_VIDEO_URL}
+          className="hidden"
+          preload="auto"
+          muted
+          playsInline
+        />
+
         {/* Small centered video - 20% of screen size */}
         <div className="w-[20vw] h-[20vh] max-w-[400px] max-h-[400px] min-w-[200px] min-h-[200px]">
           <video
@@ -116,14 +188,45 @@ export default function IntroLanding() {
     <div className="relative w-screen h-screen bg-black overflow-hidden">
       <video
         ref={doorVideoRef}
-        src={DOOR_VIDEO_URL}
+        src={ENTER_VIDEO_URL}
         className="w-full h-full object-cover"
         playsInline
         muted={true}
         controls={false}
+        preload="auto"
         onEnded={handleDoorVideoEnded}
+        onWaiting={() => {
+          console.log("Enter video waiting for data")
+        }}
+        onCanPlayThrough={() => {
+          console.log("Enter video fully buffered")
+        }}
         onLoadedMetadata={(e) => {
-          e.currentTarget.playbackRate = 1.25
+          // Play at normal speed (1.0x) - no speed increase
+          e.currentTarget.playbackRate = 1.0
+          console.log("Door video loaded, duration:", e.currentTarget.duration)
+          // If preload video exists, copy its buffered data
+          if (preloadVideoRef.current && preloadVideoRef.current.readyState >= 3) {
+            console.log("Using preloaded video data")
+          }
+        }}
+        onCanPlay={(e) => {
+          console.log("Door video can play now")
+          setDoorVideoReady(true)
+        }}
+        onCanPlayThrough={() => {
+          console.log("Door video fully buffered and ready")
+          setDoorVideoReady(true)
+        }}
+        onTimeUpdate={(e) => {
+          const video = e.currentTarget
+          // Log progress for debugging
+          if (video.duration) {
+            const progress = (video.currentTime / video.duration) * 100
+            if (progress > 90) {
+              console.log("Door video near end:", progress.toFixed(1) + "%")
+            }
+          }
         }}
       />
 

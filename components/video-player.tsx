@@ -67,6 +67,7 @@ export function VideoPlayer({ video, videoUrl, title, isOpen, onClose }: VideoPl
           autoPlay
           muted
           playsInline
+          preload="auto"
           className="w-full h-full"
           style={{ width: "100%", height: "100%", objectFit: "contain" }}
           onError={(e) => {
@@ -85,6 +86,12 @@ export function VideoPlayer({ video, videoUrl, title, isOpen, onClose }: VideoPl
           }}
           onCanPlay={() => {
             console.log("Video can play in modal", { url })
+          }}
+          onCanPlayThrough={() => {
+            console.log("Video fully buffered in modal", { url })
+          }}
+          onWaiting={() => {
+            console.log("Video waiting for data in modal", { url })
           }}
           onPlay={() => {
             console.log("Video started playing in modal", { url })
