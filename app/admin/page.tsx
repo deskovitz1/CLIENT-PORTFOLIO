@@ -298,8 +298,9 @@ export default function AdminPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="recent-work">Recent Work</SelectItem>
-                      <SelectItem value="industry-work">Industry Work</SelectItem>
-                      <SelectItem value="music-video">Music Video</SelectItem>
+                      <SelectItem value="music-video">Music</SelectItem>
+                      <SelectItem value="industry-work">Launch Videos</SelectItem>
+                      <SelectItem value="clothing">Clothing</SelectItem>
                       <SelectItem value="narrative">Narrative</SelectItem>
                     </SelectContent>
                   </Select>
