@@ -1,6 +1,10 @@
 import { VideoHomepage } from "@/components/video-homepage"
 
-export default function VideosPage() {
-  return <VideoHomepage />
+interface VideosPageProps {
+  searchParams: { category?: string }
+}
+
+export default function VideosPage({ searchParams }: VideosPageProps) {
+  return <VideoHomepage initialCategory={searchParams.category} />
 }
 

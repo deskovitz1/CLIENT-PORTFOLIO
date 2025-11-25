@@ -12,12 +12,16 @@ interface DebugLog {
   data?: any
 }
 
-export function VideoHomepage() {
+interface VideoHomepageProps {
+  initialCategory?: string
+}
+
+export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
   const [videos, setVideos] = useState<Video[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null)
   const [isPlayerOpen, setIsPlayerOpen] = useState(false)
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(initialCategory || null)
   const [showDebug, setShowDebug] = useState(false)
   const [debugLogs, setDebugLogs] = useState<DebugLog[]>([])
   const [featuredVideo, setFeaturedVideo] = useState<Video | null>(null)
@@ -35,10 +39,15 @@ export function VideoHomepage() {
   }
 
   useEffect(() => {
-    addDebugLog("info", "Component mounted, fetching videos...")
-    // Skip intro/menu logic - go straight to video grid
-    fetchVideos()
-  }, [])
+    addDebugLog("info", "Component mounted, fetching videos...", { initialCategory })
+    // Fetch videos with initial category if provided
+    if (initialCategory) {
+      setSelectedCategory(initialCategory)
+      fetchVideos(initialCategory)
+    } else {
+      fetchVideos()
+    }
+  }, [initialCategory])
 
   const fetchVideos = async (category?: string) => {
     try {
@@ -264,8 +273,8 @@ export function VideoHomepage() {
               CIRCUS17
             </a>
             <nav className="hidden md:flex items-center gap-4">
-              <button
-                onClick={handleAllVideosClick}
+              <a
+                href="/videos"
                 className={`px-3 py-1 rounded-full text-sm transition-colors ${
                   selectedCategory === null
                     ? "bg-white text-black"
@@ -273,20 +282,47 @@ export function VideoHomepage() {
                 }`}
               >
                 All
-              </button>
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => handleCategoryClick(cat || "")}
-                  className={`px-3 py-1 rounded-full text-sm transition-colors ${
-                    selectedCategory === cat
-                      ? "bg-white text-black"
-                      : "hover:bg-[#272727]"
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
+              </a>
+              <a
+                href="/videos?category=recent-work"
+                className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                  selectedCategory === "recent-work"
+                    ? "bg-white text-black"
+                    : "hover:bg-[#272727]"
+                }`}
+              >
+                Recent Work
+              </a>
+              <a
+                href="/videos?category=music-video"
+                className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                  selectedCategory === "music-video"
+                    ? "bg-white text-black"
+                    : "hover:bg-[#272727]"
+                }`}
+              >
+                Music
+              </a>
+              <a
+                href="/videos?category=industry-work"
+                className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                  selectedCategory === "industry-work"
+                    ? "bg-white text-black"
+                    : "hover:bg-[#272727]"
+                }`}
+              >
+                Launch Videos
+              </a>
+              <a
+                href="/videos?category=clothing"
+                className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                  selectedCategory === "clothing"
+                    ? "bg-white text-black"
+                    : "hover:bg-[#272727]"
+                }`}
+              >
+                Clothing
+              </a>
             </nav>
           </div>
           <a
