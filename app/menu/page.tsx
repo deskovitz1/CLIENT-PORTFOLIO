@@ -64,7 +64,7 @@ export default function MainMenuPage() {
   }, [])
 
   return (
-    <main className="relative min-h-screen bg-white flex flex-col items-center justify-center gap-12 overflow-hidden">
+    <main className="relative min-h-screen flex flex-col items-center justify-center gap-12 overflow-hidden">
       {/* Background Video */}
       <video
         ref={videoRef}
@@ -75,9 +75,6 @@ export default function MainMenuPage() {
         muted
         playsInline
       />
-
-      {/* Overlay for better text readability */}
-      <div className="absolute inset-0 bg-white/80 z-0" />
 
       {/* Content */}
       <div className="relative z-10">
