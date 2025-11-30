@@ -137,13 +137,7 @@ export default function IntroLanding() {
     router.push("/menu")
   }
 
-  const handleSkipSplash = () => {
-    // Skip splash and go directly to "click to enter" stage
-    setStage("door")
-  }
-
-  const handleSkipToMenu = () => {
-    // Skip everything and go directly to menu
+  const handleSkip = () => {
     router.push("/menu")
   }
 
@@ -162,7 +156,7 @@ export default function IntroLanding() {
         />
 
         {/* Small centered video - 60% of screen size (200% bigger than original 20%) */}
-        <div className="w-[60vw] h-[60vh] max-w-[1200px] max-h-[1200px] min-w-[600px] min-h-[600px]">
+        <div className="w-[60vw] h-[60vh] max-w-[1200px] max-h-[1200px] min-w-[400px] min-h-[400px]">
           <video
             ref={splashVideoRef}
             src={SPLASH_VIDEO_URL}
@@ -171,19 +165,31 @@ export default function IntroLanding() {
             muted={true}
             controls={false}
             autoPlay
+            preload="auto"
             onLoadedMetadata={(e) => {
+              console.log("Splash video loaded, duration:", e.currentTarget.duration)
               e.currentTarget.playbackRate = 1.25
+            }}
+            onError={(e) => {
+              console.error("Splash video error:", e.currentTarget.error)
+              console.error("Video src:", SPLASH_VIDEO_URL)
+            }}
+            onCanPlay={() => {
+              console.log("Splash video can play")
+            }}
+            onCanPlayThrough={() => {
+              console.log("Splash video fully buffered")
             }}
           />
         </div>
 
-        {/* Skip splash button - goes to click to enter page */}
+        {/* Skip intro button */}
         <button
           type="button"
-          onClick={handleSkipSplash}
+          onClick={handleSkip}
           className="absolute bottom-6 right-6 px-4 py-2 text-sm border border-white/60 rounded-full bg-black/50 text-white hover:bg-white hover:text-black transition z-20"
         >
-          Skip splash
+          Skip intro
         </button>
       </div>
     )
@@ -249,13 +255,13 @@ export default function IntroLanding() {
         </button>
       )}
 
-      {/* Skip to menu button - always visible */}
+      {/* Skip intro button - always visible */}
       <button
         type="button"
-        onClick={handleSkipToMenu}
+        onClick={handleSkip}
         className="absolute bottom-6 right-6 px-4 py-2 text-sm border border-white/60 rounded-full bg-black/50 text-white hover:bg-white hover:text-black transition z-20"
       >
-        Skip to menu
+        Skip intro
       </button>
     </div>
   )

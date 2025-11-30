@@ -1,12 +1,12 @@
--- Add is_visible column to videos table if it doesn't exist
--- This is the single source of truth for video visibility
+-- Add is_visible column to videos table
+-- This allows hiding videos from the website without deleting them
 
--- Add the column (PostgreSQL syntax)
 ALTER TABLE videos 
 ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT true;
 
--- Add an index for faster queries
+-- Create index for faster filtering
 CREATE INDEX IF NOT EXISTS idx_videos_is_visible ON videos(is_visible);
 
--- Update any existing NULL values to true (visible by default)
+-- Update existing videos to be visible by default
 UPDATE videos SET is_visible = true WHERE is_visible IS NULL;
+

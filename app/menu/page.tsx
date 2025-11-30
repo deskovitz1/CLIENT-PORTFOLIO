@@ -1,758 +1,585 @@
-"use client"
+"use client";
 
-import { useRouter } from "next/navigation"
-import { useState, useEffect, useRef } from "react"
+/**
+ * Route: /menu (Main Menu - Circle Video Selector)
+ *
+ * Video data source:
+ * - Reuses the same API as the admin "All Videos" page: GET /api/videos
+ * - Uses the Video type from lib/db (id, title, category, blob_url, video_url, etc.)
+ *
+ * Circle layout:
+ * - One large circle centered in the viewport
+ * - Circle is divided into equal angular slices (like a pie chart)
+ * - Each slice is a wedge created via CSS clip-path using polygon points on a unit circle
+ * - Slices are mapped in order onto videos; max number of slices controlled by MAX_SLICES
+ *
+ * How to adjust:
+ * - Change MAX_SLICES below to increase/decrease the number of videos used
+ * - The slice geometry is calculated in createSliceClipPath(), which samples points along the outer arc
+ */
 
-interface Letter {
-  char: string
-  x: number
-  y: number
-  vx: number
-  vy: number
-  isActive: boolean
+import { useEffect, useMemo, useState } from "react";
+import type { Video } from "@/lib/db";
+import { useRouter } from "next/navigation";
+
+// Fixed number of visual slices around the wheel
+const SLICE_COUNT = 50;
+
+// TEMP thumbnail assets from "sc tests" folder in blob storage
+const TEMP_THUMBNAILS: string[] = [
+  "https://f8itx2l7pd6t7gmj.public.blob.vercel-storage.com/sc%20tests/Screenshot%202025-11-28%20at%2011.58.35%E2%80%AFPM.png",
+  "https://f8itx2l7pd6t7gmj.public.blob.vercel-storage.com/sc%20tests/Screenshot%202025-11-28%20at%2011.58.44%E2%80%AFPM.png",
+  "https://f8itx2l7pd6t7gmj.public.blob.vercel-storage.com/sc%20tests/Screenshot%202025-11-28%20at%2011.58.55%E2%80%AFPM.png",
+  "https://f8itx2l7pd6t7gmj.public.blob.vercel-storage.com/sc%20tests/Screenshot%202025-11-28%20at%2011.59.04%E2%80%AFPM.png",
+  "https://f8itx2l7pd6t7gmj.public.blob.vercel-storage.com/sc%20tests/Screenshot%202025-11-28%20at%2011.59.10%E2%80%AFPM.png",
+  "https://f8itx2l7pd6t7gmj.public.blob.vercel-storage.com/sc%20tests/Screenshot%202025-11-28%20at%2011.59.10%E2%80%AFPM.png",
+  "https://f8itx2l7pd6t7gmj.public.blob.vercel-storage.com/sc%20tests/Screenshot%202025-11-28%20at%2011.59.41%E2%80%AFPM.png",
+  "https://f8itx2l7pd6t7gmj.public.blob.vercel-storage.com/sc%20tests/Screenshot%202025-11-29%20at%2012.00.14%E2%80%AFAM.png",
+  "https://f8itx2l7pd6t7gmj.public.blob.vercel-storage.com/sc%20tests/Screenshot%202025-11-29%20at%2012.00.30%E2%80%AFAM.png",
+];
+
+type SliceInfo = {
+  index: number;
+  clipPath: string;
+  color: string;
+  videoIndex: number | null;
+};
+
+// Convert polar coordinates (angle in degrees, radius 0..50) to percentage x/y in a 0..100 box.
+// Used to build the polygon points for a wedge.
+function polarToPercent(angleDeg: number, radius: number) {
+  const rad = (angleDeg * Math.PI) / 180;
+  const cx = 50;
+  const cy = 50;
+  const x = cx + Math.cos(rad) * radius;
+  const y = cy + Math.sin(rad) * radius;
+  return `${x}% ${y}%`;
 }
 
-function CircusLetters() {
-  const letters = "CIRCUS".split("")
-  const [letterStates, setLetterStates] = useState<Letter[]>(() =>
-    letters.map((char) => ({
-      char,
-      x: 0,
-      y: 0,
-      vx: 0,
-      vy: 0,
-      isActive: false,
-    }))
-  )
-  const containerRef = useRef<HTMLDivElement>(null)
-  const animationFrameRef = useRef<number>()
+/**
+ * Build a CSS clip-path polygon string that describes a single wedge between startAngle and endAngle.
+ * The wedge starts at the circle center and samples multiple points along the outer arc for a smooth edge.
+ */
+function createSliceClipPath(startAngle: number, endAngle: number, steps: number = 16): string {
+  const points: string[] = [];
+  // Center of circle
+  points.push("50% 50%");
 
-  useEffect(() => {
-    if (!letterStates.some((l) => l.isActive)) return
-
-    const animate = () => {
-      setLetterStates((prev) => {
-        const newStates = prev.map((letter) => {
-          if (!letter.isActive) return letter
-
-          const gravity = 0.6
-          const friction = 0.98
-          const bounce = 0.75
-
-          // Apply gravity
-          let newVy = letter.vy + gravity
-          let newVx = letter.vx * friction
-
-          // Update position
-          let newX = letter.x + newVx
-          let newY = letter.y + newVy
-
-          // Get viewport bounds (full screen)
-          const letterWidth = 100
-          const letterHeight = 120
-          const viewportWidth = window.innerWidth
-          const viewportHeight = window.innerHeight
-
-          // Bounce off walls
-          if (newX <= letterWidth / 2) {
-            newVx = -newVx * bounce
-            newX = letterWidth / 2
-          } else if (newX >= viewportWidth - letterWidth / 2) {
-            newVx = -newVx * bounce
-            newX = viewportWidth - letterWidth / 2
-          }
-
-          if (newY <= letterHeight / 2) {
-            newVy = -newVy * bounce
-            newY = letterHeight / 2
-          } else if (newY >= viewportHeight - letterHeight / 2) {
-            newVy = -newVy * bounce
-            newY = viewportHeight - letterHeight / 2
-            // Add friction when on ground
-            newVx *= 0.95
-          }
-
-          // Stop if velocity is very small and on ground
-          if (
-            Math.abs(newVx) < 0.2 &&
-            Math.abs(newVy) < 0.2 &&
-            newY >= viewportHeight - letterHeight / 2 - 10
-          ) {
-            return { ...letter, isActive: false, x: newX, y: newY, vx: 0, vy: 0 }
-          }
-
-          return {
-            ...letter,
-            x: newX,
-            y: newY,
-            vx: newVx,
-            vy: newVy,
-          }
-        })
-
-        // Continue animation if any letters are still active
-        if (newStates.some((l) => l.isActive)) {
-          animationFrameRef.current = requestAnimationFrame(animate)
-        }
-
-        return newStates
-      })
-    }
-
-    animationFrameRef.current = requestAnimationFrame(animate)
-
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current)
-      }
-    }
-  }, [letterStates])
-
-  const handleLetterClick = (index: number, e: React.MouseEvent) => {
-    const container = containerRef.current
-    if (!container) return
-
-    const rect = container.getBoundingClientRect()
-    const clickX = e.clientX
-    const clickY = e.clientY
-
-    setLetterStates((prev) => {
-      const newStates = [...prev]
-      const letter = newStates[index]
-
-      // Get current letter position (centered in container)
-      const centerX = window.innerWidth / 2
-      const centerY = rect.top + rect.height / 2
-      const letterX = centerX + (index - 2.5) * 90
-
-      // Calculate velocity based on click direction
-      const dx = clickX - letterX
-      const dy = clickY - centerY
-      const distance = Math.sqrt(dx * dx + dy * dy)
-      const force = Math.min(distance * 0.15, 20) // Cap the force
-
-      newStates[index] = {
-        ...letter,
-        x: letterX,
-        y: centerY,
-        vx: (dx / distance) * force + (Math.random() - 0.5) * 3,
-        vy: (dy / distance) * force + (Math.random() - 0.5) * 3 - 8, // Add upward boost
-        isActive: true,
-      }
-
-      return newStates
-    })
+  const angleStep = (endAngle - startAngle) / steps;
+  for (let i = 0; i <= steps; i++) {
+    const angle = startAngle + angleStep * i;
+    points.push(polarToPercent(angle, 50));
   }
 
-  return (
-    <div
-      ref={containerRef}
-      className="relative w-full h-32 md:h-40 flex items-center justify-center"
-      style={{ minHeight: "200px" }}
-    >
-      {letterStates.map((letter, index) => {
-        const centerX = typeof window !== "undefined" ? window.innerWidth / 2 : 0
-        const baseX = centerX + (index - 2.5) * 90
-
-        return (
-          <button
-            key={index}
-            type="button"
-            onClick={(e) => handleLetterClick(index, e)}
-            className="absolute cursor-pointer select-none transition-transform hover:scale-110 active:scale-95"
-            style={{
-              left: letter.isActive ? `${letter.x}px` : "50%",
-              top: letter.isActive ? `${letter.y}px` : "50%",
-              transform: letter.isActive
-                ? "translate(-50%, -50%)"
-                : `translate(calc(-50% + ${(index - 2.5) * 90}px), -50%)`,
-              transition: letter.isActive ? "none" : "transform 0.3s ease-out",
-              zIndex: letter.isActive ? 50 : 10,
-            }}
-          >
-            <span
-              className="text-6xl md:text-8xl font-black text-red-600 block"
-              style={{ fontFamily: "Helvetica, Arial, sans-serif", letterSpacing: "-0.05em" }}
-            >
-              {letter.char}
-            </span>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-function MenuButton({ 
-  label, 
-  category 
-}: { 
-  label: string
-  category?: string 
-}) {
-  const router = useRouter()
-
-  const handleClick = () => {
-    if (category) {
-      router.push(`/videos?category=${encodeURIComponent(category)}`)
-    } else {
-      router.push("/videos")
-    }
-  }
-
-  return (
-    <button
-      onClick={handleClick}
-      className="group relative px-8 py-3 text-left w-full max-w-xs transition-all duration-300 hover:translate-x-2"
-    >
-      {/* Decorative line on left */}
-      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0 h-px bg-red-600 group-hover:w-8 transition-all duration-300" />
-      
-      {/* Button text */}
-      <span 
-        className="text-2xl font-bold text-red-600 tracking-tight group-hover:tracking-wider transition-all duration-300"
-        style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}
-      >
-        {label}
-      </span>
-      
-      {/* Subtle underline on hover */}
-      <div className="absolute bottom-0 left-0 w-0 h-0.5 bg-red-600 group-hover:w-full transition-all duration-300" />
-    </button>
-  )
+  return `polygon(${points.join(", ")})`;
 }
 
 export default function MainMenuPage() {
-  const router = useRouter()
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
-  const [follower1, setFollower1] = useState({ x: 0, y: 0 })
-  const [follower2, setFollower2] = useState({ x: 0, y: 0 })
-  const [follower3, setFollower3] = useState({ x: 0, y: 0 })
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const particlesRef = useRef<Array<{
-    x: number
-    y: number
-    vx: number
-    vy: number
-    size: number
-    life: number
-    maxLife: number
-    rotation: number
-    rotationSpeed: number
-    hue: number
-    targetX: number
-    targetY: number
-  }>>([])
-  const lastMousePosRef = useRef<{ x: number; y: number; time: number }>({ x: 0, y: 0, time: 0 })
-  
-  // Click effects
-  const ripplesRef = useRef<Array<{
-    x: number
-    y: number
-    radius: number
-    life: number
-    maxLife: number
-    intensity: number
-  }>>([])
-  const gridPatternsRef = useRef<Array<{
-    x: number
-    y: number
-    radius: number
-    life: number
-    maxLife: number
-    segments: number
-    rotation: number
-  }>>([])
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [rotation, setRotation] = useState(0);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [selectedSliceIndex, setSelectedSliceIndex] = useState<number | null>(null);
+  const [selectedVideoIndex, setSelectedVideoIndex] = useState<number | null>(null);
+  const [displayVideoIndex, setDisplayVideoIndex] = useState<number | null>(null);
+  const [leverPulled, setLeverPulled] = useState(false);
+  const router = useRouter();
+
+  const fetchVideos = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/videos");
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("API error:", res.status, errorText);
+        throw new Error(`Failed to fetch videos: ${res.status}`);
+      }
+      const data = await res.json();
+      const allVideos: Video[] = data.videos || [];
+      console.log("Circle test videos loaded:", allVideos.length, "videos");
+      setVideos(allVideos);
+    } catch (err) {
+      console.error("Error loading videos for circle test:", err);
+      // Set empty array so the page still works
+      setVideos([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      setMousePosition({ x: e.clientX, y: e.clientY })
-      
-      const now = Date.now()
-      const lastPos = lastMousePosRef.current
-      
-      // Calculate velocity based on mouse movement
-      const dx = e.clientX - lastPos.x
-      const dy = e.clientY - lastPos.y
-      const dt = Math.max(1, now - lastPos.time)
-      const speed = Math.sqrt(dx * dx + dy * dy) / dt
-      
-      // Spawn particles based on movement speed
-      const particleCount = Math.min(Math.floor(speed * 0.5), 5)
-      
-      for (let i = 0; i < particleCount; i++) {
-        const angle = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.5
-        const velocity = speed * 0.1 + Math.random() * 2
-        
-        particlesRef.current.push({
-          x: e.clientX + (Math.random() - 0.5) * 10,
-          y: e.clientY + (Math.random() - 0.5) * 10,
-          vx: Math.cos(angle) * velocity + (Math.random() - 0.5) * 1,
-          vy: Math.sin(angle) * velocity + (Math.random() - 0.5) * 1,
-          size: 3 + Math.random() * 4,
-          life: 1.0,
-          maxLife: 1.0,
-          rotation: Math.random() * Math.PI * 2,
-          rotationSpeed: (Math.random() - 0.5) * 0.2,
-          hue: 0 + Math.random() * 30, // Red to orange range
-          targetX: e.clientX,
-          targetY: e.clientY,
-        })
-      }
-      
-      lastMousePosRef.current = { x: e.clientX, y: e.clientY, time: now }
-    }
-
-    window.addEventListener("mousemove", handleMouseMove)
-    return () => window.removeEventListener("mousemove", handleMouseMove)
-  }, [])
-
-  // Handle background clicks - expanding rings + unique grid pattern
-  const handleBackgroundClick = (e: React.MouseEvent) => {
-    // Don't trigger if clicking on buttons or interactive elements
-    const target = e.target as HTMLElement
-    if (target.closest('button') || target.closest('a')) {
-      return
-    }
-
-    const x = e.clientX
-    const y = e.clientY
-
-    // Create elegant expanding rings (like water drop)
-    for (let i = 0; i < 3; i++) {
-      ripplesRef.current.push({
-        x,
-        y,
-        radius: 0,
-        life: 1.0,
-        maxLife: 1.0,
-        intensity: 0.7 - i * 0.15,
-      })
-    }
-
-    // Create unique expanding radial grid pattern
-    const segments = 24 // Number of radial segments
-    const rotation = Math.random() * Math.PI * 2 // Random rotation for variety
+    // Reuse the admin "All Videos" source: GET /api/videos
+    fetchVideos();
     
-    gridPatternsRef.current.push({
-      x,
-      y,
-      radius: 0,
-      life: 1.0,
-      maxLife: 1.0,
-      segments,
-      rotation,
-    })
-  }
+    // Refresh videos every 30 seconds to pick up new uploads
+    const refreshInterval = setInterval(() => {
+      fetchVideos();
+    }, 30000);
+    
+    return () => clearInterval(refreshInterval);
+  }, []);
 
-  // Creative particle system trail effect
+  // Log the videos actually being used in the circle so we can inspect the URL field
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-
-    // Set canvas size
-    const resizeCanvas = () => {
-      canvas.width = window.innerWidth
-      canvas.height = window.innerHeight
+    if (videos.length) {
+      console.log("Circle test videos (used in circle):", videos);
     }
-    resizeCanvas()
-    window.addEventListener("resize", resizeCanvas)
+  }, [videos]);
 
-    let animationFrameId: number
-    let isFirstDraw = true
-    const GRAVITY = 0.05
-    const FRICTION = 0.98
-    const CONNECTION_DISTANCE = 120
-    const MAX_PARTICLES = 300
+  // Inject circus lights animations
+  useEffect(() => {
+    const styleId = "circus-lights-animations";
+    if (document.getElementById(styleId)) return;
 
-    const draw = () => {
-      // Initialize canvas background on first draw
-      if (isFirstDraw) {
-        ctx.fillStyle = "#F8F2ED"
-        ctx.fillRect(0, 0, canvas.width, canvas.height)
-        isFirstDraw = false
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      .circus-light {
+        width: 8px;
+        height: 8px;
+        position: absolute;
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        background: #f97316;
+        opacity: 0.2;
+        transition: opacity 0.3s ease, box-shadow 0.3s ease;
+        box-shadow: 0 0 3px rgba(249, 115, 22, 0.2);
       }
       
-      // Very slow fade (memory foam effect)
-      ctx.fillStyle = "rgba(248, 242, 237, 0.02)"
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-      const particles = particlesRef.current
+      .circus-light--active {
+        opacity: 0.9;
+        box-shadow: 0 0 6px rgba(249, 115, 22, 0.6), 0 0 10px rgba(249, 115, 22, 0.4);
+        animation: casinoLightPulse 0.8s ease-in-out infinite;
+      }
       
-      // Update and draw particles
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i]
-        
-        // Update physics
-        p.vy += GRAVITY
-        p.vx *= FRICTION
-        p.vy *= FRICTION
-        
-        // Magnetic attraction to cursor (weak)
-        const dx = mousePosition.x - p.x
-        const dy = mousePosition.y - p.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        if (dist > 0 && dist < 200) {
-          const force = 0.01 / (dist * 0.01 + 1)
-          p.vx += (dx / dist) * force
-          p.vy += (dy / dist) * force
+      @keyframes casinoLightPulse {
+        0%, 100% {
+          opacity: 0.7;
+          transform: translate(-50%, -50%) scale(1);
         }
-        
-        // Update position
-        p.x += p.vx
-        p.y += p.vy
-        p.rotation += p.rotationSpeed
-        
-        // Update life
-        p.life -= 0.005
-        
-        // Remove dead particles
-        if (p.life <= 0 || p.x < -50 || p.x > canvas.width + 50 || p.y > canvas.height + 50) {
-          particles.splice(i, 1)
-          continue
-        }
-        
-        // Limit particle count
-        if (particles.length > MAX_PARTICLES) {
-          particles.shift()
+        50% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1.15);
         }
       }
-
-      // Draw connections between nearby particles
-      ctx.lineWidth = 1
-      ctx.strokeStyle = "rgba(220, 38, 38, 0.1)"
       
-      for (let i = 0; i < particles.length; i++) {
-        const p1 = particles[i]
-        for (let j = i + 1; j < particles.length; j++) {
-          const p2 = particles[j]
-          const dx = p2.x - p1.x
-          const dy = p2.y - p1.y
-          const dist = Math.sqrt(dx * dx + dy * dy)
-          
-          if (dist < CONNECTION_DISTANCE) {
-            const opacity = (1 - dist / CONNECTION_DISTANCE) * p1.life * p2.life * 0.3
-            const hue = (p1.hue + p2.hue) / 2
-            
-            // Create gradient for connection
-            const gradient = ctx.createLinearGradient(p1.x, p1.y, p2.x, p2.y)
-            gradient.addColorStop(0, `hsla(${p1.hue}, 70%, 50%, ${opacity})`)
-            gradient.addColorStop(1, `hsla(${p2.hue}, 70%, 50%, ${opacity})`)
-            
-            ctx.strokeStyle = gradient
-            ctx.lineWidth = 0.5 + opacity * 2
-            
-            ctx.beginPath()
-            ctx.moveTo(p1.x, p1.y)
-            ctx.lineTo(p2.x, p2.y)
-            ctx.stroke()
-          }
-        }
-      }
-
-      // Draw particles with glow effect
-      for (const p of particles) {
-        const alpha = p.life
-        const size = p.size * alpha
-        
-        // Outer glow
-        const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, size * 3)
-        gradient.addColorStop(0, `hsla(${p.hue}, 70%, 60%, ${alpha * 0.8})`)
-        gradient.addColorStop(0.5, `hsla(${p.hue}, 70%, 50%, ${alpha * 0.4})`)
-        gradient.addColorStop(1, `hsla(${p.hue}, 70%, 50%, 0)`)
-        
-        ctx.fillStyle = gradient
-        ctx.beginPath()
-        ctx.arc(p.x, p.y, size * 3, 0, Math.PI * 2)
-        ctx.fill()
-        
-        // Main particle with rotation
-        ctx.save()
-        ctx.translate(p.x, p.y)
-        ctx.rotate(p.rotation)
-        
-        // Draw geometric shape (rotating diamond/star)
-        const shapeSize = size
-        ctx.fillStyle = `hsla(${p.hue}, 80%, 55%, ${alpha * 0.9})`
-        ctx.beginPath()
-        
-        // Create a star/diamond shape
-        for (let i = 0; i < 8; i++) {
-          const angle = (i / 8) * Math.PI * 2
-          const radius = i % 2 === 0 ? shapeSize : shapeSize * 0.5
-          const x = Math.cos(angle) * radius
-          const y = Math.sin(angle) * radius
-          if (i === 0) ctx.moveTo(x, y)
-          else ctx.lineTo(x, y)
-        }
-        ctx.closePath()
-        ctx.fill()
-        
-        // Inner core
-        ctx.fillStyle = `hsla(${p.hue + 20}, 90%, 70%, ${alpha})`
-        ctx.beginPath()
-        ctx.arc(0, 0, size * 0.3, 0, Math.PI * 2)
-        ctx.fill()
-        
-        ctx.restore()
-      }
-
-      // Update and draw elegant ripples
-      const ripples = ripplesRef.current
-      for (let i = ripples.length - 1; i >= 0; i--) {
-        const r = ripples[i]
-        r.radius += 6
-        r.life -= 0.015
-        
-        if (r.life <= 0) {
-          ripples.splice(i, 1)
-          continue
-        }
-        
-        const alpha = r.life * r.intensity
-        // Clean, minimal ripple - single elegant ring
-        ctx.strokeStyle = `rgba(220, 38, 38, ${alpha * 0.3})`
-        ctx.lineWidth = 1.5
-        ctx.setLineDash([])
-        ctx.beginPath()
-        ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2)
-        ctx.stroke()
-      }
-
-      // Update and draw unique expanding radial grid pattern
-      const gridPatterns = gridPatternsRef.current
-      for (let i = gridPatterns.length - 1; i >= 0; i--) {
-        const gp = gridPatterns[i]
-        gp.radius += 12 // Expand faster
-        gp.life -= 0.008 // Fade slower
-        
-        if (gp.life <= 0 || gp.radius > Math.max(canvas.width, canvas.height) * 1.5) {
-          gridPatterns.splice(i, 1)
-          continue
-        }
-        
-        const alpha = gp.life * 0.6
-        const maxRadius = gp.radius
-        const ringCount = Math.floor(maxRadius / 60) // Create rings every 60px
-        const segmentAngle = (Math.PI * 2) / gp.segments
-        
-        ctx.save()
-        ctx.translate(gp.x, gp.y)
-        ctx.rotate(gp.rotation)
-        
-        // Draw concentric rings with radial segments
-        for (let ring = 1; ring <= ringCount; ring++) {
-          const ringRadius = ring * 60
-          const ringAlpha = alpha * (1 - ring / ringCount) * 0.4
-          
-          // Draw radial lines from center
-          ctx.strokeStyle = `rgba(220, 38, 38, ${ringAlpha * 0.3})`
-          ctx.lineWidth = 0.8
-          
-          for (let seg = 0; seg < gp.segments; seg++) {
-            const angle = seg * segmentAngle
-            const x1 = Math.cos(angle) * (ringRadius - 60)
-            const y1 = Math.sin(angle) * (ringRadius - 60)
-            const x2 = Math.cos(angle) * ringRadius
-            const y2 = Math.sin(angle) * ringRadius
-            
-            ctx.beginPath()
-            ctx.moveTo(x1, y1)
-            ctx.lineTo(x2, y2)
-            ctx.stroke()
-          }
-          
-          // Draw connecting arcs between segments
-          if (ring > 1) {
-            ctx.strokeStyle = `rgba(220, 38, 38, ${ringAlpha * 0.2})`
-            ctx.lineWidth = 0.5
-            
-            for (let seg = 0; seg < gp.segments; seg++) {
-              const angle1 = seg * segmentAngle
-              const angle2 = ((seg + 1) % gp.segments) * segmentAngle
-              
-              // Connect adjacent radial points with arcs
-              ctx.beginPath()
-              const x1 = Math.cos(angle1) * ringRadius
-              const y1 = Math.sin(angle1) * ringRadius
-              const x2 = Math.cos(angle2) * ringRadius
-              const y2 = Math.sin(angle2) * ringRadius
-              
-              ctx.moveTo(x1, y1)
-              ctx.quadraticCurveTo(0, 0, x2, y2)
-              ctx.stroke()
-            }
-          }
-          
-          // Draw ring circle
-          ctx.strokeStyle = `rgba(220, 38, 38, ${ringAlpha * 0.25})`
-          ctx.lineWidth = 1
-          ctx.beginPath()
-          ctx.arc(0, 0, ringRadius, 0, Math.PI * 2)
-          ctx.stroke()
-        }
-        
-        // Draw central hub
-        ctx.fillStyle = `rgba(220, 38, 38, ${alpha * 0.2})`
-        ctx.beginPath()
-        ctx.arc(0, 0, 8, 0, Math.PI * 2)
-        ctx.fill()
-        
-        ctx.restore()
-      }
-
-      animationFrameId = requestAnimationFrame(draw)
-    }
-
-    draw()
+    `;
+    document.head.appendChild(style);
 
     return () => {
-      cancelAnimationFrame(animationFrameId)
-      window.removeEventListener("resize", resizeCanvas)
-    }
-  }, [mousePosition])
+      const existingStyle = document.getElementById(styleId);
+      if (existingStyle) {
+        existingStyle.remove();
+      }
+    };
+  }, []);
 
-  // Multiple trailing followers with different speeds for a cool effect
+  const slices: SliceInfo[] = useMemo(() => {
+    const count = SLICE_COUNT;
+    const anglePerSlice = 360 / count;
+
+    // Simple circus-inspired pastel palette for placeholder wedges
+    const COLORS = [
+      "#F97373", // soft red
+      "#FDBA74", // orange
+      "#FACC15", // yellow
+      "#4ADE80", // green
+      "#38BDF8", // blue
+      "#A855F7", // purple
+      "#F472B6", // pink
+      "#FB7185", // coral
+    ];
+
+    return Array.from({ length: count }).map((_, index) => {
+      const startAngle = -90 + index * anglePerSlice; // Start from top
+      const endAngle = startAngle + anglePerSlice;
+      const clipPath = createSliceClipPath(startAngle, endAngle);
+      const color = COLORS[index % COLORS.length];
+
+      // Optional future behavior: attach a video to this slice
+      const videoIndex =
+        videos.length > 0 ? index % videos.length : null;
+
+      return { index, clipPath, color, videoIndex };
+    });
+  }, [videos]);
+
+  const handleSliceClick = (video: Video) => {
+    const url = video.video_url || video.blob_url;
+    if (!url) return;
+
+    // Match admin behavior: open underlying video URL (blob_url / video_url)
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const activeVideo =
+    displayVideoIndex != null && videos[displayVideoIndex]
+      ? videos[displayVideoIndex]
+      : selectedVideoIndex != null && videos[selectedVideoIndex]
+      ? videos[selectedVideoIndex]
+      : videos[0];
+
+  const spinWheel = () => {
+    if (isSpinning) return;
+    // Allow spinning even if no videos (for testing)
+    if (videos.length === 0) {
+      console.warn("No videos loaded, but allowing spin for testing");
+    }
+
+    setIsSpinning(true);
+    setSelectedSliceIndex(null);
+    setSelectedVideoIndex(null);
+
+    const sliceAngle = 360 / SLICE_COUNT;
+    const targetSliceIndex = Math.floor(Math.random() * SLICE_COUNT);
+    const centerOffset = sliceAngle / 2;
+    const targetAngle = 360 - targetSliceIndex * sliceAngle - centerOffset;
+    const extraSpins = 360 * 6; // multiple full turns
+    const finalRotation = rotation + extraSpins + targetAngle;
+
+    // Use requestAnimationFrame to ensure transition is applied before rotation change
+    requestAnimationFrame(() => {
+      setRotation(finalRotation);
+    });
+
+    // Determine which video this slice corresponds to
+    const videoIndex =
+      videos.length > 0 ? targetSliceIndex % videos.length : null;
+
+    setTimeout(() => {
+      setIsSpinning(false);
+      setSelectedSliceIndex(targetSliceIndex);
+      setSelectedVideoIndex(videoIndex);
+      setDisplayVideoIndex(videoIndex);
+    }, 4600);
+  };
+
+  const handleLeverPullStart = () => {
+    if (isSpinning) return;
+    setLeverPulled(true);
+  };
+
+  const handleLeverPullEnd = () => {
+    if (isSpinning) return;
+    if (!leverPulled) return;
+    setLeverPulled(false);
+    spinWheel();
+  };
+
+  // While spinning, cycle through video titles so the user sees different names flash by
   useEffect(() => {
-    let animationFrameId: number
+    if (!isSpinning || videos.length === 0) return;
 
-    const animate = () => {
-      // First follower - closest to cursor
-      setFollower1((prev) => {
-        const dx = mousePosition.x - prev.x
-        const dy = mousePosition.y - prev.y
-        return {
-          x: prev.x + dx * 0.15,
-          y: prev.y + dy * 0.15,
-        }
-      })
+    let index = 0;
+    const interval = setInterval(() => {
+      setDisplayVideoIndex((prev) => {
+        if (prev == null) return 0;
+        const next = (prev + 1) % videos.length;
+        index = next;
+        return next;
+      });
+    }, 150);
 
-      // Second follower - middle trail
-      setFollower2((prev) => {
-        const dx = mousePosition.x - prev.x
-        const dy = mousePosition.y - prev.y
-        return {
-          x: prev.x + dx * 0.08,
-          y: prev.y + dy * 0.08,
-        }
-      })
+    return () => clearInterval(interval);
+  }, [isSpinning, videos.length]);
 
-      // Third follower - furthest trail
-      setFollower3((prev) => {
-        const dx = mousePosition.x - prev.x
-        const dy = mousePosition.y - prev.y
-        return {
-          x: prev.x + dx * 0.04,
-          y: prev.y + dy * 0.04,
-        }
-      })
-
-      animationFrameId = requestAnimationFrame(animate)
+  // When the wheel stops and we have a selected video index, lock the display on that video
+  useEffect(() => {
+    if (!isSpinning && selectedVideoIndex != null && videos[selectedVideoIndex]) {
+      setDisplayVideoIndex(selectedVideoIndex);
     }
-
-    animate()
-    return () => cancelAnimationFrame(animationFrameId)
-  }, [mousePosition])
+  }, [isSpinning, selectedVideoIndex, videos]);
 
   return (
-    <main 
-      className="min-h-screen flex flex-col items-center justify-center px-4 relative overflow-hidden" 
-      style={{ backgroundColor: '#F8F2ED' }}
-      onClick={handleBackgroundClick}
-    >
-      {/* Canvas for memory foam trail effect */}
-      <canvas
-        ref={canvasRef}
-        className="fixed inset-0 pointer-events-none z-0"
-        style={{ backgroundColor: '#F8F2ED' }}
-      />
-      
-      {/* Cool mouse follower with multiple trailing elements */}
-      {/* Third follower - furthest, largest, most transparent */}
-      <div
-        className="fixed pointer-events-none z-50"
-        style={{
-          left: `${follower3.x}px`,
-          top: `${follower3.y}px`,
-          transform: "translate(-50%, -50%)",
-        }}
-      >
-        <div className="w-16 h-16 rounded-full bg-red-600/5 blur-xl" />
-        <div className="absolute inset-0 w-8 h-8 rounded-full bg-red-600/10 blur-md -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
+    <main className="circle-test-page min-h-screen w-full flex flex-col items-center justify-between bg-white text-black px-6 md:px-8 py-6 md:py-10 relative overflow-hidden">
+      {/* Casino-style lights around the perimeter */}
+      <div className="circus-lights-container absolute inset-0 pointer-events-none z-0">
+        {/* Top row */}
+        {Array.from({ length: 20 }).map((_, i) => (
+          <div
+            key={`top-${i}`}
+            className={`circus-light absolute top-2 ${isSpinning ? "circus-light--active" : ""}`}
+            style={{
+              left: `${(i + 1) * (100 / 21)}%`,
+              animationDelay: `${i * 0.1}s`,
+            }}
+          />
+        ))}
+        
+        {/* Bottom row */}
+        {Array.from({ length: 20 }).map((_, i) => (
+          <div
+            key={`bottom-${i}`}
+            className={`circus-light absolute bottom-2 ${isSpinning ? "circus-light--active" : ""}`}
+            style={{
+              left: `${(i + 1) * (100 / 21)}%`,
+              animationDelay: `${(i + 10) * 0.1}s`,
+            }}
+          />
+        ))}
+        
+        {/* Left side */}
+        {Array.from({ length: 12 }).map((_, i) => (
+          <div
+            key={`left-${i}`}
+            className={`circus-light absolute left-2 ${isSpinning ? "circus-light--active" : ""}`}
+            style={{
+              top: `${(i + 1) * (100 / 13)}%`,
+              animationDelay: `${(i + 5) * 0.1}s`,
+            }}
+          />
+        ))}
+        
+        {/* Right side */}
+        {Array.from({ length: 12 }).map((_, i) => (
+          <div
+            key={`right-${i}`}
+            className={`circus-light absolute right-2 ${isSpinning ? "circus-light--active" : ""}`}
+            style={{
+              top: `${(i + 1) * (100 / 13)}%`,
+              animationDelay: `${(i + 15) * 0.1}s`,
+            }}
+          />
+        ))}
       </div>
 
-      {/* Second follower - middle trail */}
-      <div
-        className="fixed pointer-events-none z-50"
-        style={{
-          left: `${follower2.x}px`,
-          top: `${follower2.y}px`,
-          transform: "translate(-50%, -50%)",
-        }}
-      >
-        <div className="w-12 h-12 rounded-full bg-red-600/15 blur-lg" />
-        <div className="absolute inset-0 w-6 h-6 rounded-full bg-red-600/25 blur-sm -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
+      {/* Top navigation - centered */}
+      <header className="relative z-10 w-full max-w-7xl mx-auto flex items-center justify-center mb-8 pt-4">
+        <nav className="flex items-center gap-5 md:gap-8 text-xs md:text-sm tracking-[0.25em] uppercase">
+          <a
+            href="/videos"
+            className="group relative inline-flex items-center"
+          >
+            <span className="px-1 py-0.5 rounded-[3px] group-hover:bg-red-500/90 transition-colors">
+              <span className="relative z-10 text-black group-hover:text-white">All</span>
+            </span>
+          </a>
+          <a
+            href="/videos?category=recent-work"
+            className="group relative inline-flex items-center"
+          >
+            <span className="px-1 py-0.5 rounded-[3px] group-hover:bg-red-500/90 transition-colors">
+              <span className="relative z-10 text-black group-hover:text-white">Recent Work</span>
+            </span>
+          </a>
+          <a
+            href="/videos?category=music-video"
+            className="group relative inline-flex items-center"
+          >
+            <span className="px-1 py-0.5 rounded-[3px] group-hover:bg-red-500/90 transition-colors">
+              <span className="relative z-10 text-black group-hover:text-white">Music</span>
+            </span>
+          </a>
+          <a
+            href="/videos?category=industry-work"
+            className="group relative inline-flex items-center"
+          >
+            <span className="px-1 py-0.5 rounded-[3px] group-hover:bg-red-500/90 transition-colors">
+              <span className="relative z-10 text-black group-hover:text-white">Launch Videos</span>
+            </span>
+          </a>
+          <a
+            href="/videos?category=clothing"
+            className="group relative inline-flex items-center"
+          >
+            <span className="px-1 py-0.5 rounded-[3px] group-hover:bg-red-500/90 transition-colors">
+              <span className="relative z-10 text-black group-hover:text-white">Clothing</span>
+            </span>
+          </a>
+          {/* Link to old menu page */}
+          <a
+            href="/circle-video-test"
+            className="group relative inline-flex items-center"
+          >
+            <span className="px-1 py-0.5 rounded-[3px] group-hover:bg-red-500/90 transition-colors">
+              <span className="relative z-10 text-black group-hover:text-white">Old Menu</span>
+            </span>
+          </a>
+        </nav>
+      </header>
+
+      {/* Video count and refresh button */}
+      <div className="absolute top-20 right-4 z-20 flex items-center gap-3">
+        <button
+          onClick={fetchVideos}
+          disabled={loading}
+          className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 rounded border border-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {loading ? "Loading..." : "Refresh Videos"}
+        </button>
+        <span className="text-xs text-gray-500">
+          {videos.length} video{videos.length !== 1 ? "s" : ""} loaded
+        </span>
       </div>
 
-      {/* First follower - closest to cursor, most visible */}
-      <div
-        className="fixed pointer-events-none z-50"
-        style={{
-          left: `${follower1.x}px`,
-          top: `${follower1.y}px`,
-          transform: "translate(-50%, -50%)",
-        }}
-      >
-        <div className="w-8 h-8 rounded-full bg-red-600/20 blur-md" />
-        <div className="absolute inset-0 w-4 h-4 rounded-full bg-red-600/40 -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
-        <div className="absolute inset-0 w-2 h-2 rounded-full bg-red-600/60 -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
-      </div>
-
-      {/* Decorative geometric elements */}
-      <div className="absolute top-20 left-10 w-32 h-32 border-2 border-red-100 rotate-45 opacity-20" />
-      <div className="absolute bottom-20 right-10 w-24 h-24 border-2 border-red-100 rounded-full opacity-20" />
-      <div className="absolute top-1/2 right-20 w-px h-32 bg-red-100 opacity-30" />
-      
-      {/* Main content */}
-      <div className="relative z-10 flex flex-col items-center gap-16 w-full max-w-4xl">
-        {/* Title area */}
-        <div className="text-center">
-          <CircusLetters />
-          <div className="flex items-center justify-center gap-4 mt-4">
-            <div className="w-12 h-px bg-red-600" />
-            <span className="text-red-400 text-sm tracking-widest uppercase">17</span>
-            <div className="w-12 h-px bg-red-600" />
+      {loading ? (
+        <div className="relative z-10 flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-5xl mb-4 animate-pulse">🎪</div>
+            <p className="text-sm text-gray-500 tracking-[0.25em] uppercase">
+              Loading circle collage…
+            </p>
           </div>
         </div>
-
-        {/* Menu buttons */}
-        <div className="flex flex-col items-center gap-2 w-full">
-          <MenuButton label="Recent Work" category="recent-work" />
-          <MenuButton label="Music" category="music-video" />
-          <MenuButton label="Launch Videos" category="industry-work" />
-          <MenuButton label="Clothing" category="clothing" />
-          {/* Temporary experimental routes for geometric and circle video selectors */}
-          <div className="mt-4 flex flex-col items-center gap-1 text-[10px] uppercase tracking-[0.3em]">
-            <button
-              type="button"
-              onClick={() => router.push("/geometric-video-test")}
-              className="text-red-500 hover:text-red-700 transition-colors"
-            >
-              Geometric Test
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push("/circle-video-test")}
-              className="text-red-400 hover:text-red-700 transition-colors"
-            >
-              Circle Test
-            </button>
+      ) : !slices.length ? (
+        <div className="relative z-10 flex-1 flex items-center justify-center w-full">
+          <div className="text-center">
+            <p className="text-lg text-gray-800 mb-2">No videos available</p>
+            <p className="text-xs text-gray-500 uppercase tracking-[0.25em]">
+              Upload videos in the admin panel to populate this circle
+            </p>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="relative z-10 sc-page w-full max-w-[1600px] mx-auto flex flex-col md:flex-row items-center justify-center gap-16 md:gap-24 lg:gap-32 flex-1 py-8 md:py-12">
+          {/* Left side: lever + wheel in a row */}
+          <div className="sc-left flex flex-col md:flex-row items-center justify-center gap-10 md:gap-12 flex-shrink-0">
+            {/* Minimal lever on the left */}
+            <div
+              className={`lever-mount relative w-[140px] h-[140px] flex items-center justify-start cursor-pointer ${
+                isSpinning ? "lever-mount--disabled opacity-50 cursor-not-allowed" : ""
+              }`}
+              onMouseDown={handleLeverPullStart}
+              onMouseUp={handleLeverPullEnd}
+              onMouseLeave={handleLeverPullEnd}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                handleLeverPullStart();
+              }}
+              onTouchEnd={handleLeverPullEnd}
+            >
+              {/* Lever arm: red ball + bar into base (visually pivoting in center of base) */}
+              <div
+                className="lever-arm absolute left-1 top-1/2 w-[130px] h-9"
+                style={{
+                  transformOrigin: "90% 50%",
+                  // At rest: slightly angled up; when pulled: swings down, pivoting around center of base
+                  transform: leverPulled || isSpinning
+                    ? "translateY(-50%) rotate(-25deg)"
+                    : "translateY(-50%) rotate(20deg)",
+                  transition: "transform 0.15s ease-out",
+                }}
+              >
+                <div className="lever-ball absolute left-0 top-1/2 w-[28px] h-[28px] -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_30%_30%,#ffe5e5,#ff3b3b_55%,#8b0000)] shadow-[0_5px_10px_rgba(0,0,0,0.5)]" />
+                {/* Bar aligned to emerge from the center slot of the base */}
+                <div className="lever-bar absolute left-[26px] right-[30px] top-1/2 h-[7px] -translate-y-1/2 rounded-full bg-neutral-900 shadow-[0_0_3px_rgba(0,0,0,0.6)]" />
+              </div>
+              {/* Vertical base with slot on the right */}
+              <div className="lever-base absolute right-0 top-1/2 w-[32px] h-[80px] -translate-y-1/2 rounded-[7px] bg-neutral-900 shadow-[0_7px_16px_rgba(0,0,0,0.45)] flex items-center justify-center">
+                <div className="lever-slot w-[5px] h-[60px] rounded-[3px] bg-neutral-700" />
+              </div>
+            </div>
+
+            {/* WHEEL COLUMN (right of lever) */}
+            <div className="wheel-column flex flex-col items-center justify-center flex-shrink-0">
+              <div
+                className="circle-wrapper relative rounded-full overflow-hidden border-2 border-gray-300 shadow-[0_20px_60px_rgba(15,23,42,0.25)] bg-white"
+                style={{
+                  width: "600px",
+                  height: "600px",
+                  maxWidth: "min(75vmin, 600px)",
+                  maxHeight: "min(75vmin, 600px)",
+                  aspectRatio: "1 / 1",
+                  transform: `rotate(${rotation}deg)`,
+                  transition: isSpinning
+                    ? "transform 4.5s cubic-bezier(0.2, 0.8, 0.2, 1)"
+                    : "transform 0.3s ease-out",
+                  willChange: isSpinning ? "transform" : "auto",
+                }}
+              >
+                {/* Slices */}
+                {slices.map(({ videoIndex, index, clipPath, color }) => {
+                  const video = videoIndex != null ? videos[videoIndex] : undefined;
+                  const isHovered = hoveredIndex === index;
+                  const thumb =
+                    TEMP_THUMBNAILS.length > 0
+                      ? TEMP_THUMBNAILS[index % TEMP_THUMBNAILS.length]
+                      : null;
+
+                  return (
+                    <button
+                      key={`slice-${index}`}
+                      type="button"
+                      onClick={() => {
+                        if (isSpinning || videoIndex == null) return;
+                        setSelectedSliceIndex(index);
+                        setSelectedVideoIndex(videoIndex);
+                        setDisplayVideoIndex(videoIndex);
+                      }}
+                      onMouseEnter={() => !isSpinning && setHoveredIndex(index)}
+                      onMouseLeave={() => !isSpinning && setHoveredIndex(null)}
+                      className={[
+                        "circle-slice absolute inset-0 group transition-transform duration-200 ease-out",
+                        isHovered && !isSpinning ? "scale-[1.02]" : "",
+                        isSpinning ? "pointer-events-none" : "cursor-pointer",
+                      ].join(" ")}
+                      style={{
+                        WebkitClipPath: clipPath,
+                        clipPath,
+                      }}
+                    >
+                      {thumb ? (
+                        <img
+                          src={thumb}
+                          alt={video?.title || `Slice ${index + 1}`}
+                          className="circle-slice-image w-full h-full object-cover block transition-transform duration-300 ease-out group-hover:scale-[1.05]"
+                        />
+                      ) : (
+                        <div
+                          className="w-full h-full"
+                          style={{
+                            backgroundColor: color,
+                          }}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+
+                {/* Optional inner ring for structure */}
+                <div className="pointer-events-none absolute inset-[6%] rounded-full border border-white/80" />
+              </div>
+
+              {/* Pointer at the bottom indicating selection */}
+              <div className="wheel-pointer pointer-events-none mt-2">
+                <div className="wheel-pointer-bottom w-0 h-0 border-l-[14px] border-l-transparent border-r-[14px] border-r-transparent border-b-[24px] border-b-red-600 drop-shadow-[0_4px_8px_rgba(0,0,0,0.3)]" />
+              </div>
+            </div>
+          </div>
+
+          {/* Right column: CRT TV that plays the selected video */}
+          <div className="sc-right flex items-center justify-center flex-shrink-0">
+            <div className="crt-shell flex flex-col items-center gap-4">
+              <div className="crt-frame rounded-[32px] bg-[radial-gradient(circle_at_top_left,#444,#111)] p-5 md:p-6 shadow-[0_20px_50px_rgba(0,0,0,0.4)]">
+                <div className="crt-screen relative w-[320px] md:w-[420px] lg:w-[500px] aspect-[4/3] bg-black rounded-[20px] overflow-hidden border-[5px] border-[#222] shadow-[inset_0_0_40px_rgba(0,0,0,0.9)] flex-shrink-0">
+                  {activeVideo ? (
+                    <video
+                      key={activeVideo.id}
+                      src={activeVideo.video_url || activeVideo.blob_url || ""}
+                      className="crt-video w-full h-full object-cover"
+                      controls
+                      autoPlay
+                    />
+                  ) : (
+                    <div className="crt-placeholder w-full h-full flex items-center justify-center text-sm text-gray-400">
+                      Spin the wheel to pick a video
+                    </div>
+                  )}
+                  {/* Scanline overlay */}
+                  <div className="crt-scanlines pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(to_bottom,rgba(255,255,255,0.04)_0,rgba(255,255,255,0.04)_1px,transparent_1px,transparent_3px)] mix-blend-soft-light" />
+                </div>
+              </div>
+              {/* CRT controls */}
+              <div className="crt-controls flex items-center justify-center gap-5 w-full mt-1">
+                <div className="crt-knob w-[36px] h-[36px] rounded-full bg-[radial-gradient(circle_at_30%_30%,#666,#222)] shadow-[0_4px_12px_rgba(0,0,0,0.7)] border border-gray-700" />
+                <div className="crt-knob w-[36px] h-[36px] rounded-full bg-[radial-gradient(circle_at_30%_30%,#666,#222)] shadow-[0_4px_12px_rgba(0,0,0,0.7)] border border-gray-700" />
+                <div className="crt-speaker w-[100px] h-[32px] rounded-[16px] bg-[repeating-linear-gradient(to_right,#333_0,#333_2px,#111_2px,#111_4px)] border border-gray-700" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
-  )
+  );
 }

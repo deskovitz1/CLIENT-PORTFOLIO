@@ -12,7 +12,7 @@ export interface Video {
   file_size: number | null;
   duration: number | null;
   display_date: string | null;
-  visible: boolean;  // Single source of truth - NOT NULL, defaults to true
+  is_visible: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -25,14 +25,14 @@ export interface Video {
 // This helps filter it out from the /videos page grid
 const INTRO_VIDEO_FILENAME = "WEBSITE VID heaven"
 
-export async function getVideos(category?: string, excludeIntro: boolean = true, includeHidden: boolean = false): Promise<Video[]> {
+export async function getVideos(category?: string, excludeIntro: boolean = true): Promise<Video[]> {
   try {
     const whereClause: any = {}
     
     // Build conditions array
     const conditions: any[] = []
     
-    if (category) {
+  if (category) {
       conditions.push({ category })
     }
     
@@ -48,9 +48,6 @@ export async function getVideos(category?: string, excludeIntro: boolean = true,
         },
       })
     }
-    
-    // TEMPORARILY DISABLED: Show all videos while we fix visibility
-    // TODO: Re-enable after migration: if (!includeHidden) { conditions.push({ visible: true }) }
     
     // Only use AND if we have multiple conditions
     if (conditions.length > 1) {
@@ -70,25 +67,16 @@ export async function getVideos(category?: string, excludeIntro: boolean = true,
         orderBy,
       });
     } catch (error) {
-      // If there's a schema mismatch, try a simpler query with raw SQL
+      // If there's a schema mismatch, try a simpler query
       console.error("Error in findMany, trying raw query:", error);
       const errorMsg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
       if (errorMsg.includes("column") || errorMsg.includes("does not exist")) {
         // Use raw SQL query as fallback
-        const whereParts: string[] = [];
-        
-        if (category) {
-          whereParts.push(`category = '${category.replace(/'/g, "''")}'`);
-        }
-        
-        if (excludeIntro) {
-          whereParts.push(`file_name NOT LIKE '%${INTRO_VIDEO_FILENAME.replace(/'/g, "''")}%'`);
-        }
-        
-        // TEMPORARILY DISABLED: Show all videos while we fix visibility
-        // TODO: Re-enable after migration: if (!includeHidden) { whereParts.push(`visible = true`); }
-        
-        const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : "";
+        const whereSql = category 
+          ? `WHERE category = '${category.replace(/'/g, "''")}'`
+          : excludeIntro 
+          ? `WHERE file_name NOT LIKE '%${INTRO_VIDEO_FILENAME.replace(/'/g, "''")}%'`
+          : "";
         videos = await prisma.$queryRawUnsafe<Array<any>>(
           `SELECT * FROM videos ${whereSql} ORDER BY created_at DESC LIMIT 100`
         );
@@ -101,7 +89,7 @@ export async function getVideos(category?: string, excludeIntro: boolean = true,
       ...v,
       file_size: v.file_size ? Number(v.file_size) : null,
       display_date: v.display_date ? v.display_date.toISOString() : null,
-      visible: v.visible !== null && v.visible !== undefined ? Boolean(v.visible) : true, // Default to visible if missing
+      is_visible: v.is_visible !== null && v.is_visible !== undefined ? Boolean(v.is_visible) : true, // Default to visible
       created_at: v.created_at ? (typeof v.created_at === 'string' ? v.created_at : v.created_at.toISOString()) : new Date().toISOString(),
       updated_at: v.updated_at ? (typeof v.updated_at === 'string' ? v.updated_at : v.updated_at.toISOString()) : new Date().toISOString(),
     })) as Video[];
@@ -224,64 +212,34 @@ export async function createVideo(data: {
       ...video,
       file_size: video.file_size ? Number(video.file_size) : null,
       display_date: video.display_date ? video.display_date.toISOString() : null,
-      visible: video.visible !== null && video.visible !== undefined ? Boolean(video.visible) : true,
-      created_at: video.created_at ? (typeof video.created_at === 'string' ? video.created_at : video.created_at.toISOString()) : new Date().toISOString(),
-      updated_at: video.updated_at ? (typeof video.updated_at === 'string' ? video.updated_at : video.updated_at.toISOString()) : new Date().toISOString(),
     } as Video;
   } catch (error) {
     console.error("Error in createVideo:", error);
-    const errorMsg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-    
-    // If there's a schema mismatch (missing columns like display_date or visible), use raw SQL
-    if (errorMsg.includes("column") || errorMsg.includes("does not exist") || errorMsg.includes("display_date") || errorMsg.includes("visible")) {
-      console.warn("Schema mismatch detected in createVideo, using raw SQL fallback");
+    // If display_date is the issue, retry without it
+    if (error instanceof Error && error.message.includes("display_date") && data.display_date !== undefined) {
+      console.warn("display_date column may not exist, retrying without it...");
+      const createDataWithoutDate = {
+        title: data.title,
+        description: data.description || null,
+        category: data.category || null,
+        video_url: data.video_url,
+        thumbnail_url: data.thumbnail_url || null,
+        blob_url: data.blob_url,
+        file_name: data.file_name,
+        file_size: data.file_size ? BigInt(data.file_size) : null,
+        duration: data.duration || null,
+      };
       
-      // Build INSERT statement with only columns that definitely exist
-      const columns: string[] = ['title', 'description', 'category', 'video_url', 'thumbnail_url', 'blob_url', 'file_name', 'file_size', 'duration', 'created_at', 'updated_at'];
-      const values: any[] = [];
-      
-      // Escape and add values
-      const escapedTitle = (data.title || '').replace(/'/g, "''");
-      const escapedDesc = (data.description || '').replace(/'/g, "''");
-      const escapedCategory = (data.category || '').replace(/'/g, "''");
-      const escapedVideoUrl = (data.video_url || '').replace(/'/g, "''");
-      const escapedThumbnailUrl = (data.thumbnail_url || '').replace(/'/g, "''");
-      const escapedBlobUrl = (data.blob_url || '').replace(/'/g, "''");
-      const escapedFileName = (data.file_name || '').replace(/'/g, "''");
-      
-      const valueParts: string[] = [
-        `'${escapedTitle}'`,
-        data.description !== undefined ? `'${escapedDesc}'` : 'NULL',
-        data.category ? `'${escapedCategory}'` : 'NULL',
-        `'${escapedVideoUrl}'`,
-        data.thumbnail_url ? `'${escapedThumbnailUrl}'` : 'NULL',
-        `'${escapedBlobUrl}'`,
-        `'${escapedFileName}'`,
-        data.file_size ? String(data.file_size) : 'NULL',
-        data.duration ? String(data.duration) : 'NULL',
-        'CURRENT_TIMESTAMP',
-        'CURRENT_TIMESTAMP',
-      ];
-      
-      const sql = `INSERT INTO videos (${columns.join(', ')}) VALUES (${valueParts.join(', ')}) RETURNING *`;
-      
-      const results = await prisma.$queryRawUnsafe<Array<any>>(sql);
-      const video = results[0];
-      
-      if (!video) {
-        throw new Error("Failed to create video - no result returned");
-      }
+      const video = await prisma.video.create({
+        data: createDataWithoutDate,
+      });
       
       return {
         ...video,
         file_size: video.file_size ? Number(video.file_size) : null,
-        display_date: null, // Column doesn't exist, so always null
-        visible: true, // Default to true if column doesn't exist
-        created_at: video.created_at ? (typeof video.created_at === 'string' ? video.created_at : video.created_at.toISOString()) : new Date().toISOString(),
-        updated_at: video.updated_at ? (typeof video.updated_at === 'string' ? video.updated_at : video.updated_at.toISOString()) : new Date().toISOString(),
+        display_date: null,
       } as Video;
     }
-    
     throw error;
   }
 }
@@ -297,78 +255,136 @@ export async function updateVideo(
   }
 ): Promise<Video | null> {
   try {
-    // Start with only basic fields that definitely exist
-    const updateData: any = {};
+    // Build update data with only provided fields
+    const updateData: any = {
+      updated_at: new Date(), // Always update timestamp
+    };
     
     if (data.title !== undefined) updateData.title = data.title;
     if (data.description !== undefined) updateData.description = data.description || null;
+    if (data.category !== undefined) updateData.category = data.category || null;
     
-    // Handle category - if is_visible is being set, use category as workaround
+    // Try to include optional fields
+    if (data.display_date !== undefined) {
+      updateData.display_date = data.display_date ? new Date(data.display_date) : null;
+    }
     if (data.is_visible !== undefined) {
-      // Use category field as workaround for is_visible (more reliable than trying is_visible column)
-      if (data.is_visible === false) {
-        updateData.category = "__HIDDEN__";
-      } else {
-        // If showing and category was __HIDDEN__, we need to restore original category
-        // But we don't have it, so if category is explicitly provided, use that
-        // Otherwise, we'll need to fetch the video first to get original category
-        if (data.category !== undefined) {
-          updateData.category = data.category;
-        } else {
-          // Try to get original category from database
-          const existing = await prisma.video.findUnique({
-            where: { id },
-            select: { category: true },
-          });
-          // If it was __HIDDEN__, set to null, otherwise keep original
-          updateData.category = existing?.category === "__HIDDEN__" ? null : existing?.category || null;
-        }
-      }
-    } else if (data.category !== undefined) {
-      // Only update category if is_visible wasn't set
-      updateData.category = data.category;
+      updateData.is_visible = data.is_visible;
     }
 
-    // Try to update with basic fields first
+    console.log(`Updating video ${id} with data:`, updateData);
+
     let video;
     try {
       video = await prisma.video.update({
         where: { id },
         data: updateData,
       });
-    } catch (error) {
-      // If update fails, try with even more minimal data
-      const errorMsg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-      console.warn("Update failed, trying minimal update:", errorMsg);
+      console.log(`Video ${id} updated successfully via Prisma`);
+    } catch (error: any) {
+      // If there's a schema mismatch (missing columns), try raw SQL fallback
+      const errorMsg = error?.message?.toLowerCase() || String(error).toLowerCase();
+      console.warn(`Prisma update failed: ${errorMsg}`);
       
-      // Only update title and description - these definitely exist
-      const minimalUpdate: any = {};
-      if (data.title !== undefined) minimalUpdate.title = data.title;
-      if (data.description !== undefined) minimalUpdate.description = data.description || null;
-      
-      // For visibility, use category workaround
-      if (data.is_visible !== undefined) {
-        minimalUpdate.category = data.is_visible === false ? "__HIDDEN__" : null;
-      } else if (data.category !== undefined) {
-        minimalUpdate.category = data.category;
+      if (errorMsg.includes("column") || errorMsg.includes("does not exist") || errorMsg.includes("unknown argument")) {
+        console.warn("Attempting raw SQL update fallback");
+        
+        // Build raw SQL UPDATE query with only basic fields that should always exist
+        const updates: string[] = [];
+        const values: any[] = [];
+        let paramIndex = 1;
+        
+        // Always include these basic fields
+        if (data.title !== undefined) {
+          updates.push(`title = $${paramIndex}`);
+          values.push(data.title);
+          paramIndex++;
+        }
+        if (data.description !== undefined) {
+          updates.push(`description = $${paramIndex}`);
+          values.push(data.description || null);
+          paramIndex++;
+        }
+        if (data.category !== undefined) {
+          updates.push(`category = $${paramIndex}`);
+          values.push(data.category || null);
+          paramIndex++;
+        }
+        
+        // Add updated_at
+        updates.push(`updated_at = $${paramIndex}`);
+        values.push(new Date());
+        paramIndex++;
+        
+        // Add id for WHERE clause
+        const idParamIndex = paramIndex;
+        values.push(id);
+        
+        if (updates.length === 0) {
+          throw new Error("No valid fields to update");
+        }
+        
+        const query = `UPDATE videos SET ${updates.join(", ")} WHERE id = $${idParamIndex} RETURNING *`;
+        console.log("Raw SQL query:", query);
+        console.log("Values:", values);
+        
+        const rawResults = await prisma.$queryRawUnsafe<Array<any>>(query, ...values);
+        
+        if (!rawResults || rawResults.length === 0) {
+          console.error(`Video ${id} not found for update`);
+          return null; // Video not found
+        }
+        
+        video = rawResults[0];
+        console.log(`Video ${id} updated successfully via raw SQL`);
+      } else {
+        // Re-throw non-schema errors
+        throw error;
       }
-      
-      video = await prisma.video.update({
+    }
+
+    // Fetch the updated video to ensure we have all fields
+    let updatedVideo;
+    try {
+      updatedVideo = await prisma.video.findUnique({
         where: { id },
-        data: minimalUpdate,
       });
+    } catch (fetchError: any) {
+      // If Prisma fails to fetch (e.g., due to missing columns), use raw SQL
+      const fetchErrorMsg = fetchError?.message?.toLowerCase() || String(fetchError).toLowerCase();
+      if (fetchErrorMsg.includes("column") || fetchErrorMsg.includes("does not exist")) {
+        console.warn("Prisma findUnique failed, using raw SQL to fetch video");
+        const rawResults = await prisma.$queryRawUnsafe<Array<any>>(
+          `SELECT * FROM videos WHERE id = $1`,
+          id
+        );
+        if (!rawResults || rawResults.length === 0) {
+          console.error(`Video ${id} not found after update`);
+          return null;
+        }
+        updatedVideo = rawResults[0];
+      } else {
+        throw fetchError;
+      }
+    }
+
+    if (!updatedVideo) {
+      console.error(`Video ${id} not found after update`);
+      return null;
     }
 
     return {
-      ...video,
-      file_size: video.file_size ? Number(video.file_size) : null,
-      display_date: video.display_date ? video.display_date.toISOString() : null,
-      is_visible: video.is_visible !== null && video.is_visible !== undefined ? Boolean(video.is_visible) : true,
-      created_at: video.created_at.toISOString(),
-      updated_at: video.updated_at.toISOString(),
+      ...updatedVideo,
+      file_size: updatedVideo.file_size ? Number(updatedVideo.file_size) : null,
+      display_date: updatedVideo.display_date ? (typeof updatedVideo.display_date === 'string' ? updatedVideo.display_date : updatedVideo.display_date.toISOString()) : null,
+      is_visible: updatedVideo.is_visible !== null && updatedVideo.is_visible !== undefined ? Boolean(updatedVideo.is_visible) : true,
+      created_at: updatedVideo.created_at ? (typeof updatedVideo.created_at === 'string' ? updatedVideo.created_at : updatedVideo.created_at.toISOString()) : new Date().toISOString(),
+      updated_at: updatedVideo.updated_at ? (typeof updatedVideo.updated_at === 'string' ? updatedVideo.updated_at : updatedVideo.updated_at.toISOString()) : new Date().toISOString(),
     } as Video;
   } catch (error) {
     console.error("Error updating video:", error);
+    console.error("Error details:", error instanceof Error ? error.message : String(error));
+    console.error("Error stack:", error instanceof Error ? error.stack : "No stack");
     throw error; // Re-throw so API route can handle it
   }
 }
@@ -379,9 +395,23 @@ export async function deleteVideo(id: number): Promise<boolean> {
       where: { id },
     });
     return true;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in deleteVideo:", error);
-    console.error("Error details:", error instanceof Error ? error.message : String(error));
-    throw error; // Re-throw so the API route can handle it properly
+    const errorMsg = error.message?.toLowerCase() || "";
+    
+    // If Prisma fails due to schema mismatch (e.g., missing columns), try raw SQL
+    if (errorMsg.includes("column") || errorMsg.includes("does not exist") || errorMsg.includes("unknown argument")) {
+      console.warn("Prisma delete failed due to schema mismatch, attempting raw SQL delete.");
+      try {
+        await prisma.$executeRawUnsafe(`DELETE FROM videos WHERE id = $1`, id);
+        return true;
+      } catch (rawError) {
+        console.error("Raw SQL delete also failed:", rawError);
+        throw rawError;
+      }
+    }
+    
+    // Re-throw other errors
+    throw error;
   }
 }

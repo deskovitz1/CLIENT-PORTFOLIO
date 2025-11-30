@@ -22,14 +22,13 @@ model Video {
   file_size    BigInt?
   duration     Int?
   display_date DateTime? @db.Timestamp
-  visible      Boolean   @default(true)  // Single source of truth for visibility
+  is_visible   Boolean?  @default(true)
   created_at   DateTime  @default(now())
   updated_at   DateTime  @default(now()) @updatedAt
 
   @@index([category])
   @@index([created_at(sort: Desc)])
   @@index([display_date(sort: Desc)])
-  @@index([visible])
   @@map("videos")
 }
 

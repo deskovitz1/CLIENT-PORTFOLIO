@@ -50,73 +50,57 @@ export function VideoPlayer({ video, videoUrl, title, isOpen, onClose }: VideoPl
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-4 overflow-y-auto">
-      <div className="w-full max-w-7xl flex flex-col items-center">
-        {/* Video Container */}
-        <div className="relative w-full aspect-video bg-black">
-          <Button
-            onClick={onClose}
-            variant="ghost"
-            size="icon"
-            className="absolute top-4 right-4 z-50 text-white hover:bg-white/10"
-          >
-            <X className="h-6 w-6" />
-          </Button>
-          
-          <video
-            src={url}
-            controls
-            autoPlay
-            muted
-            playsInline
-            preload="auto"
-            className="w-full h-full"
-            style={{ width: "100%", height: "100%", objectFit: "contain" }}
-            onError={(e) => {
-              const video = e.currentTarget
-              console.error("Video playback error:", {
-                error: video.error,
-                code: video.error?.code,
-                message: video.error?.message,
-                networkState: video.networkState,
-                readyState: video.readyState,
-                src: video.src,
-              })
-            }}
-            onLoadedMetadata={() => {
-              console.log("Video metadata loaded in modal", { url })
-            }}
-            onCanPlay={() => {
-              console.log("Video can play in modal", { url })
-            }}
-            onCanPlayThrough={() => {
-              console.log("Video fully buffered in modal", { url })
-            }}
-            onWaiting={() => {
-              console.log("Video waiting for data in modal", { url })
-            }}
-            onPlay={() => {
-              console.log("Video started playing in modal", { url })
-            }}
-          />
-          
-          {/* Title Overlay on Video - positioned to not block controls */}
-        </div>
+    <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4">
+      <div className="relative w-full max-w-7xl aspect-video bg-black">
+        <Button
+          onClick={onClose}
+          variant="ghost"
+          size="icon"
+          className="absolute top-4 right-4 z-50 text-white hover:bg-white/10"
+        >
+          <X className="h-6 w-6" />
+        </Button>
         
-        {/* Title and Description below video */}
-        {(title || video?.description) && (
-          <div className="w-full mt-6">
-            <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-6">
-              {title && (
-                <h3 className="text-gray-100 text-xl font-semibold mb-3">{title}</h3>
-              )}
-              {video?.description && (
-                <>
-                  <h4 className="text-gray-400 text-xs uppercase tracking-wider mb-3">Description</h4>
-                  <p className="text-gray-200 text-base leading-relaxed whitespace-pre-wrap">{video.description}</p>
-                </>
-              )}
-            </div>
+        <video
+          src={url}
+          controls
+          autoPlay
+          muted
+          playsInline
+          preload="auto"
+          className="w-full h-full"
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          onError={(e) => {
+            const video = e.currentTarget
+            console.error("Video playback error:", {
+              error: video.error,
+              code: video.error?.code,
+              message: video.error?.message,
+              networkState: video.networkState,
+              readyState: video.readyState,
+              src: video.src,
+            })
+          }}
+          onLoadedMetadata={() => {
+            console.log("Video metadata loaded in modal", { url })
+          }}
+          onCanPlay={() => {
+            console.log("Video can play in modal", { url })
+          }}
+          onCanPlayThrough={() => {
+            console.log("Video fully buffered in modal", { url })
+          }}
+          onWaiting={() => {
+            console.log("Video waiting for data in modal", { url })
+          }}
+          onPlay={() => {
+            console.log("Video started playing in modal", { url })
+          }}
+        />
+        
+        {title && (
+          <div className="absolute bottom-4 left-4 right-4">
+            <h3 className="text-gray-100 text-lg font-light drop-shadow-md">{title}</h3>
           </div>
         )}
       </div>

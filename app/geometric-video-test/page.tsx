@@ -74,17 +74,12 @@ export default function GeometricVideoTestPage() {
     // Reuse the same data source as admin "All Videos": GET /api/videos
     const fetchVideos = async () => {
       try {
-        const res = await fetch("/api/videos", { cache: 'no-store' });
+        const res = await fetch("/api/videos");
         if (!res.ok) {
           throw new Error("Failed to fetch videos");
         }
         const data = await res.json();
-        let allVideos: Video[] = data.videos || [];
-        
-        // Client-side filter: exclude hidden videos as safety net
-        // Use visible boolean as single source of truth
-        allVideos = allVideos.filter((v: Video) => v.visible === true);
-        
+        const allVideos: Video[] = data.videos || [];
         // Limit to first 20 videos to keep the mosaic performant
         setVideos(allVideos.slice(0, 20));
       } catch (err) {

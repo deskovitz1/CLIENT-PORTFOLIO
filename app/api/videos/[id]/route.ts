@@ -1,79 +1,138 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getVideoById } from "@/lib/db";
+import { deleteVideo, getVideoById, updateVideo } from "@/lib/db";
 import { del } from "@vercel/blob";
-import { prisma } from "@/lib/prisma";
 
 // DELETE a video
 export async function DELETE(
-  _req: Request,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const id = Number(params.id);
+    const id = parseInt(params.id);
 
-    if (!Number.isFinite(id)) {
+    if (isNaN(id)) {
       return NextResponse.json(
-        { error: 'Invalid id', details: params.id },
-        { status: 400 },
+        { error: "Invalid video ID" },
+        { status: 400 }
       );
     }
 
-    // Get video first to check if it exists and get blob URL
-    const video = await prisma.video.findUnique({
-      where: { id },
-      select: { id: true, blob_url: true, title: true },
-    });
+    // Get video to retrieve blob URL
+    const video = await getVideoById(id);
 
     if (!video) {
       return NextResponse.json(
-        { error: 'Video not found' },
-        { status: 404 },
+        { error: "Video not found" },
+        { status: 404 }
       );
     }
 
-    // Try to delete from Vercel Blob (non-blocking - continue even if this fails)
+    console.log(`Deleting video ID ${id}: ${video.title}`);
+    console.log(`Blob URL: ${video.blob_url}`);
+
+    // Delete from Vercel Blob
     let blobDeleted = false;
-    if (video.blob_url) {
-      try {
-        await del(video.blob_url, {
-          token: process.env.BLOB_READ_WRITE_TOKEN,
-        });
-        blobDeleted = true;
-      } catch (blobError) {
-        // Log but don't fail - blob might not exist or be in different format
-        console.warn('Could not delete blob, continuing with database deletion:', blobError);
-      }
-    }
-
-    // Delete from database using raw SQL to avoid schema mismatch issues
     try {
-      await prisma.video.delete({
-        where: { id },
-      });
-    } catch (deleteError: any) {
-      // If Prisma delete fails due to schema mismatch, use raw SQL
-      const errorMsg = deleteError?.message?.toLowerCase() || String(deleteError).toLowerCase();
-      if (errorMsg.includes('column') || errorMsg.includes('does not exist') || errorMsg.includes('display_date')) {
-        console.warn('Prisma delete failed due to schema mismatch, using raw SQL');
-        await prisma.$executeRaw`DELETE FROM videos WHERE id = ${id}`;
-      } else {
-        throw deleteError;
+      if (video.blob_url) {
+        // Try multiple approaches to delete the blob
+        try {
+          // First, try with the full URL
+          await del(video.blob_url, {
+            token: process.env.BLOB_READ_WRITE_TOKEN,
+          });
+          blobDeleted = true;
+          console.log("Blob deleted successfully (using full URL)");
+        } catch (urlError) {
+          // If that fails, try extracting the pathname
+          try {
+            const urlObj = new URL(video.blob_url);
+            const pathname = urlObj.pathname.substring(1); // Remove leading slash
+            
+            console.log(`Attempting to delete blob with pathname: ${pathname}`);
+            
+            await del(pathname, {
+              token: process.env.BLOB_READ_WRITE_TOKEN,
+            });
+            blobDeleted = true;
+            console.log("Blob deleted successfully (using pathname)");
+          } catch (pathError) {
+            // If both fail, log but continue
+            console.warn("Could not delete blob, but continuing with database deletion");
+            console.error("URL deletion error:", urlError instanceof Error ? urlError.message : String(urlError));
+            console.error("Pathname deletion error:", pathError instanceof Error ? pathError.message : String(pathError));
+          }
+        }
       }
+    } catch (blobError) {
+      console.error("Error deleting blob:", blobError);
+      console.error("Blob error details:", blobError instanceof Error ? blobError.message : String(blobError));
+      // Continue with database deletion even if blob deletion fails
+      // The blob might not exist, might have been deleted already, or might be in a different format
+      // This is not a fatal error - we still want to delete from the database
     }
 
+    // Delete from database
+    try {
+      const deleted = await deleteVideo(id);
+
+      if (!deleted) {
+        console.error(`deleteVideo returned false for video ID ${id}`);
+        return NextResponse.json(
+          { 
+            error: "Failed to delete video from database",
+            details: "Database deletion returned false"
+          },
+          { status: 500 }
+        );
+      }
+      
+      console.log(`Video ${id} successfully deleted from database`);
+    } catch (dbError: any) {
+      console.error("Database deletion error:", dbError);
+      console.error("Error type:", dbError?.constructor?.name);
+      console.error("Error message:", dbError instanceof Error ? dbError.message : String(dbError));
+      console.error("Error code:", dbError?.code);
+      console.error("Error meta:", dbError?.meta);
+      
+      // Check if it's a "record not found" error (which is actually fine - video already deleted)
+      if (dbError?.code === 'P2025' || dbError?.message?.includes('Record to delete does not exist')) {
+        console.log(`Video ${id} not found in database (may have been already deleted)`);
+        return NextResponse.json({ 
+          success: true,
+          blobDeleted,
+          message: "Video not found in database (may have been already deleted)"
+        });
+      }
+      
+      return NextResponse.json(
+        { 
+          error: "Failed to delete video from database",
+          details: dbError instanceof Error ? dbError.message : String(dbError),
+          errorCode: dbError?.code,
+          errorMeta: dbError?.meta
+        },
+        { status: 500 }
+      );
+    }
+
+    console.log(`Video ${id} deleted successfully (blob: ${blobDeleted ? 'yes' : 'skipped'})`);
     return NextResponse.json({ 
-      success: true, 
-      video: { id: video.id, title: video.title },
+      success: true,
       blobDeleted,
     });
-  } catch (err: any) {
-    console.error('DELETE /api/videos/[id] error', err);
+  } catch (error) {
+    console.error("Error deleting video:", error);
+    console.error("Error type:", error?.constructor?.name);
+    console.error("Error message:", error instanceof Error ? error.message : String(error));
+    console.error("Error stack:", error instanceof Error ? error.stack : "No stack");
+    
     return NextResponse.json(
-      {
-        error: 'Failed to delete video',
-        details: err?.message || String(err),
+      { 
+        error: "Failed to delete video",
+        details: error instanceof Error ? error.message : String(error),
+        errorType: error?.constructor?.name || typeof error
       },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
@@ -120,103 +179,67 @@ export async function PATCH(
   try {
     const id = parseInt(params.id);
 
-    if (!Number.isFinite(id)) {
+    if (isNaN(id)) {
       return NextResponse.json(
-        { error: 'Invalid id', details: params.id },
-        { status: 400 },
+        { error: "Invalid video ID" },
+        { status: 400 }
       );
     }
 
     const body = await request.json();
-    const data: any = {};
+    const { title, description, category, display_date, is_visible } = body;
 
-    if (typeof body.title === 'string') data.title = body.title;
-    if (typeof body.description === 'string') data.description = body.description;
+    console.log(`Updating video ID ${id}:`, { title, description, category, display_date, is_visible });
 
-    if (Object.keys(data).length === 0) {
+    try {
+      const video = await updateVideo(id, {
+        title,
+        description,
+        category,
+        display_date,
+        is_visible,
+      });
+
+      if (!video) {
+        console.error(`Video ${id} not found for update`);
+        return NextResponse.json(
+          { error: "Video not found or update failed" },
+          { status: 404 }
+        );
+      }
+
+      console.log(`Video ${id} updated successfully`);
+      return NextResponse.json({ video });
+    } catch (updateError: any) {
+      console.error("Update error:", updateError);
+      console.error("Error type:", updateError?.constructor?.name);
+      console.error("Error message:", updateError instanceof Error ? updateError.message : String(updateError));
+      console.error("Error code:", updateError?.code);
+      console.error("Error meta:", updateError?.meta);
+      
       return NextResponse.json(
-        { error: 'No valid fields provided' },
-        { status: 400 },
+        { 
+          error: "Failed to update video",
+          details: updateError instanceof Error ? updateError.message : String(updateError),
+          errorCode: updateError?.code,
+          errorMeta: updateError?.meta
+        },
+        { status: 500 }
       );
     }
-
-    // Try Prisma update first
-    let video;
-    try {
-      video = await prisma.video.update({
-        where: { id },
-        data,
-      });
-    } catch (prismaError: any) {
-      // If Prisma update fails due to schema mismatch, use raw SQL
-      const errorMsg = prismaError?.message?.toLowerCase() || String(prismaError).toLowerCase();
-      if (errorMsg.includes('column') || errorMsg.includes('does not exist') || errorMsg.includes('unknown argument')) {
-        console.warn('Prisma update failed due to schema mismatch, using raw SQL');
-        
-        // Build SET clause for raw SQL with proper escaping
-        const setParts: string[] = [];
-        
-        if (typeof body.title === 'string') {
-          // Escape single quotes in title
-          const escapedTitle = body.title.replace(/'/g, "''");
-          setParts.push(`title = '${escapedTitle}'`);
-        }
-        
-        if (typeof body.description === 'string') {
-          // Escape single quotes in description
-          const escapedDesc = body.description.replace(/'/g, "''");
-          setParts.push(`description = '${escapedDesc}'`);
-        } else if (body.description === null || body.description === '') {
-          setParts.push(`description = NULL`);
-        }
-        
-        if (setParts.length === 0) {
-          return NextResponse.json(
-            { error: 'No valid fields provided' },
-            { status: 400 },
-          );
-        }
-        
-        // Add updated_at
-        setParts.push(`updated_at = CURRENT_TIMESTAMP`);
-        
-        // Execute raw SQL update (using template literal with proper escaping)
-        await prisma.$executeRawUnsafe(
-          `UPDATE videos SET ${setParts.join(', ')} WHERE id = ${id}`
-        );
-        
-        // Fetch updated video
-        const updatedVideos = await prisma.$queryRawUnsafe<Array<any>>(
-          `SELECT * FROM videos WHERE id = ${id}`
-        );
-        
-        if (updatedVideos.length === 0) {
-          return NextResponse.json(
-            { error: 'Video not found' },
-            { status: 404 },
-          );
-        }
-        
-        video = updatedVideos[0];
-      } else {
-        throw prismaError;
-      }
-    }
-
-    // Format response to match Video interface
-    return NextResponse.json({
-      ...video,
-      file_size: video.file_size ? Number(video.file_size) : null,
-      display_date: video.display_date ? (typeof video.display_date === 'string' ? video.display_date : video.display_date.toISOString()) : null,
-      visible: video.visible !== null && video.visible !== undefined ? Boolean(video.visible) : true,
-      created_at: video.created_at ? (typeof video.created_at === 'string' ? video.created_at : video.created_at.toISOString()) : new Date().toISOString(),
-      updated_at: video.updated_at ? (typeof video.updated_at === 'string' ? video.updated_at : video.updated_at.toISOString()) : new Date().toISOString(),
-    });
-  } catch (err: any) {
-    console.error('PATCH /api/videos/[id] error', err);
+  } catch (error) {
+    console.error("Error updating video:", error);
+    console.error("Error type:", error?.constructor?.name);
+    console.error("Error message:", error instanceof Error ? error.message : String(error));
+    console.error("Error stack:", error instanceof Error ? error.stack : "No stack");
+    
     return NextResponse.json(
-      { error: 'Failed to update video', details: err?.message || String(err) },
-      { status: 500 },
+      { 
+        error: "Failed to update video",
+        details: error instanceof Error ? error.message : String(error),
+        errorType: error?.constructor?.name || typeof error
+      },
+      { status: 500 }
     );
   }
 }

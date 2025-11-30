@@ -11,13 +11,22 @@ export async function GET(request: NextRequest) {
     
     console.log("Category filter:", category || "none");
     console.log("Include intro:", includeIntro);
+    const allVideos = await getVideos(category || undefined, !includeIntro);
     
-    // If includeIntro=true (admin page), include hidden videos
-    // Otherwise (public pages), exclude hidden videos at database level
-    // getVideos handles filtering by visible boolean automatically
-    const videos = await getVideos(category || undefined, !includeIntro, includeIntro);
+    // Filter out videos that are not visible (unless includeIntro is true, then show all)
+    // Also filter out videos with category "__HIDDEN__" (workaround if is_visible column doesn't exist)
+    const videos = includeIntro 
+      ? allVideos 
+      : allVideos.filter(v => {
+          // Check is_visible field if it exists
+          if (v.is_visible !== undefined && v.is_visible !== null) {
+            return v.is_visible !== false;
+          }
+          // Fallback: filter out videos with hidden category marker
+          return v.category !== "__HIDDEN__";
+        });
     
-    console.log(`Found ${videos.length} video(s)`);
+    console.log(`Found ${videos.length} video(s) (${allVideos.length} total)`);
     return NextResponse.json({ videos });
   } catch (error) {
     console.error("Error fetching videos:", error);
@@ -36,9 +45,9 @@ export async function GET(request: NextRequest) {
 // POST - Save video metadata after direct upload to Blob
 // The file is already uploaded directly to Blob storage by the client
 export async function POST(request: NextRequest) {
-  const saveStartTime = Date.now();
-  
   try {
+    console.log("POST /api/videos - Saving video metadata");
+    
     const body = await request.json();
     const { 
       blobUrl, 
@@ -51,14 +60,8 @@ export async function POST(request: NextRequest) {
       file_size 
     } = body;
 
-    console.log("\n💾 [SAVE METADATA] " + "=".repeat(60));
-    console.log(`   Title: ${title}`);
-    console.log(`   File: ${file_name || "unknown"}`);
-    console.log(`   Category: ${category || "none"}`);
-    console.log(`   Blob URL: ${blobUrl?.substring(0, 60)}...`);
-
     if (!blobUrl) {
-      console.error("❌ No blob URL provided");
+      console.error("No blob URL provided");
       return NextResponse.json(
         { error: "Blob URL is required" },
         { status: 400 }
@@ -66,14 +69,14 @@ export async function POST(request: NextRequest) {
     }
 
     if (!title) {
-      console.error("❌ No title provided");
+      console.error("No title provided");
       return NextResponse.json(
         { error: "Title is required" },
         { status: 400 }
       );
     }
 
-    console.log("   ⏳ Creating video record in database...");
+    console.log("Creating video record in database...");
     // Create video record in database
     const video = await createVideo({
       title,
@@ -86,23 +89,13 @@ export async function POST(request: NextRequest) {
       display_date: display_date || undefined,
     });
 
-    const saveTime = (Date.now() - saveStartTime) / 1000;
-    console.log(`   ✓ Video saved successfully!`);
-    console.log(`   📊 Video ID: ${video.id}`);
-    console.log(`   ⏱️  Save time: ${saveTime.toFixed(2)}s`);
-    console.log("💾 [SAVE METADATA END] " + "=".repeat(60) + "\n");
-
+    console.log("Video created successfully:", video.id);
     return NextResponse.json({ video }, { status: 201 });
   } catch (error) {
-    const saveTime = (Date.now() - saveStartTime) / 1000;
-    console.error("\n❌ [SAVE METADATA ERROR] " + "=".repeat(60));
-    console.error(`   Failed after: ${saveTime.toFixed(2)}s`);
-    console.error(`   Error type:`, error?.constructor?.name);
-    console.error(`   Error message:`, error instanceof Error ? error.message : String(error));
-    if (error instanceof Error && error.stack) {
-      console.error(`   Stack:`, error.stack);
-    }
-    console.error("❌ [SAVE METADATA ERROR END] " + "=".repeat(60) + "\n");
+    console.error("Error saving video:", error);
+    console.error("Error type:", error?.constructor?.name);
+    console.error("Error message:", error instanceof Error ? error.message : String(error));
+    console.error("Error stack:", error instanceof Error ? error.stack : "No stack");
   
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
