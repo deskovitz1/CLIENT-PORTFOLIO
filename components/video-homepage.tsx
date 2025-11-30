@@ -5,6 +5,7 @@ import { Video } from "@/lib/db"
 import { VideoPlayer } from "@/components/video-player"
 import { Play, Calendar, Bug, X, AlertCircle, Edit2, Trash2, Save, XCircle, Plus, Upload } from "lucide-react"
 import { upload } from '@vercel/blob/client'
+import { useAdmin } from "@/contexts/AdminContext"
 
 interface DebugLog {
   timestamp: string
@@ -245,7 +246,7 @@ function FeaturedVideoItem({ video, onChanged, onVideoClick, videoRefs, onVideoL
         </div>
 
         {/* Edit/Delete Actions */}
-        {showActions && (
+        {isAdmin && showActions && (
           <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
             <button
               onClick={(e) => {
@@ -491,7 +492,7 @@ function VideoItem({ video, onChanged, onSelect, videoRefs, onVideoLoad, onVideo
       </div>
 
       {/* Edit/Delete Actions */}
-      {showActions && (
+      {isAdmin && showActions && (
         <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={(e) => {
@@ -520,6 +521,7 @@ function VideoItem({ video, onChanged, onSelect, videoRefs, onVideoLoad, onVideo
 }
 
 export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
+  const { isAdmin } = useAdmin()
   const [videos, setVideos] = useState<Video[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null)
@@ -986,22 +988,17 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
               </a>
             </nav>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowAddVideo(true)}
-              className="px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-full transition-colors flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Add Video
-            </button>
-            <a
-              href="/admin"
-              className="px-4 py-2 text-sm text-gray-900 rounded-full transition-colors hover:bg-red-200"
-              style={{ backgroundColor: '#FBBF24' }}
-            >
-              Admin
-            </a>
-          </div>
+          {isAdmin && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowAddVideo(true)}
+                className="px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-full transition-colors flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Add Video
+              </button>
+            </div>
+          )}
         </div>
       </header>
 

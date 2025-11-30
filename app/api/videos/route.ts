@@ -1,5 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { getVideos, createVideo, getIntroVideo } from "@/lib/db";
+
+function requireAdmin() {
+  const store = cookies();
+  const admin = store.get('admin')?.value;
+  if (admin !== '1') {
+    const err: any = new Error('NOT_ADMIN');
+    err.code = 'NOT_ADMIN';
+    throw err;
+  }
+}
 
 // GET all videos (excludes intro video by default)
 export async function GET(request: NextRequest) {
@@ -46,6 +57,7 @@ export async function GET(request: NextRequest) {
 // The file is already uploaded directly to Blob storage by the client
 export async function POST(request: NextRequest) {
   try {
+    requireAdmin();
     console.log("POST /api/videos - Saving video metadata");
     
     const body = await request.json();
@@ -91,20 +103,23 @@ export async function POST(request: NextRequest) {
 
     console.log("Video created successfully:", video.id);
     return NextResponse.json({ video }, { status: 201 });
-  } catch (error) {
-    console.error("Error saving video:", error);
-    console.error("Error type:", error?.constructor?.name);
-    console.error("Error message:", error instanceof Error ? error.message : String(error));
-    console.error("Error stack:", error instanceof Error ? error.stack : "No stack");
+  } catch (err: any) {
+    if (err?.code === 'NOT_ADMIN' || err?.message === 'NOT_ADMIN') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    console.error("Error saving video:", err);
+    console.error("Error type:", err?.constructor?.name);
+    console.error("Error message:", err instanceof Error ? err.message : String(err));
+    console.error("Error stack:", err instanceof Error ? err.stack : "No stack");
   
     const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
+      err instanceof Error ? err.message : "Unknown error";
   
     return NextResponse.json(
       { 
         error: errorMessage,
-        details: error instanceof Error ? error.stack : String(error),
-        errorType: error?.constructor?.name || typeof error
+        details: err instanceof Error ? err.stack : String(err),
+        errorType: err?.constructor?.name || typeof err
       },
       { status: 500 }
     );

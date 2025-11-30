@@ -4,6 +4,9 @@ import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { FilmGrain } from "@/components/film-grain"
 import { Toaster } from "@/components/ui/sonner"
+import { AdminProvider } from "@/contexts/AdminContext"
+import { AdminShortcutListener } from "@/components/AdminShortcutListener"
+import { AdminBadge } from "@/components/AdminBadge"
 import "./globals.css"
 
 const _geist = Geist({ subsets: ["latin"] })
@@ -23,7 +26,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`font-sans antialiased`}>
-        {children}
+        <AdminProvider>
+          <AdminShortcutListener />
+          <AdminBadge />
+          {children}
+        </AdminProvider>
         <FilmGrain />
         <Analytics />
         <Toaster />

@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { deleteVideo, getVideoById, updateVideo } from "@/lib/db";
 import { del } from "@vercel/blob";
+
+function requireAdmin() {
+  const store = cookies();
+  const admin = store.get('admin')?.value;
+  if (admin !== '1') {
+    const err: any = new Error('NOT_ADMIN');
+    err.code = 'NOT_ADMIN';
+    throw err;
+  }
+}
 
 // DELETE a video
 export async function DELETE(
@@ -120,17 +131,20 @@ export async function DELETE(
       success: true,
       blobDeleted,
     });
-  } catch (error) {
-    console.error("Error deleting video:", error);
-    console.error("Error type:", error?.constructor?.name);
-    console.error("Error message:", error instanceof Error ? error.message : String(error));
-    console.error("Error stack:", error instanceof Error ? error.stack : "No stack");
+  } catch (err: any) {
+    if (err?.code === 'NOT_ADMIN' || err?.message === 'NOT_ADMIN') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    console.error("Error deleting video:", err);
+    console.error("Error type:", err?.constructor?.name);
+    console.error("Error message:", err instanceof Error ? err.message : String(err));
+    console.error("Error stack:", err instanceof Error ? err.stack : "No stack");
     
     return NextResponse.json(
       { 
         error: "Failed to delete video",
-        details: error instanceof Error ? error.message : String(error),
-        errorType: error?.constructor?.name || typeof error
+        details: err instanceof Error ? err.message : String(err),
+        errorType: err?.constructor?.name || typeof err
       },
       { status: 500 }
     );
@@ -177,6 +191,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
+    requireAdmin();
     const id = parseInt(params.id);
 
     if (isNaN(id)) {
@@ -234,17 +249,20 @@ export async function PATCH(
         { status: 500 }
       );
     }
-  } catch (error) {
-    console.error("Error updating video:", error);
-    console.error("Error type:", error?.constructor?.name);
-    console.error("Error message:", error instanceof Error ? error.message : String(error));
-    console.error("Error stack:", error instanceof Error ? error.stack : "No stack");
+  } catch (err: any) {
+    if (err?.code === 'NOT_ADMIN' || err?.message === 'NOT_ADMIN') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    console.error("Error updating video:", err);
+    console.error("Error type:", err?.constructor?.name);
+    console.error("Error message:", err instanceof Error ? err.message : String(err));
+    console.error("Error stack:", err instanceof Error ? err.stack : "No stack");
     
     return NextResponse.json(
       { 
         error: "Failed to update video",
-        details: error instanceof Error ? error.message : String(error),
-        errorType: error?.constructor?.name || typeof error
+        details: err instanceof Error ? err.message : String(err),
+        errorType: err?.constructor?.name || typeof err
       },
       { status: 500 }
     );

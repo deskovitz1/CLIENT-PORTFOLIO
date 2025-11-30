@@ -1,5 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createVideo } from "@/lib/db";
+
+function requireAdmin() {
+  const store = cookies();
+  const admin = store.get('admin')?.value;
+  if (admin !== '1') {
+    const err: any = new Error('NOT_ADMIN');
+    err.code = 'NOT_ADMIN';
+    throw err;
+  }
+}
 
 // POST - Save video metadata after client-side Blob upload
 // The file is already uploaded directly to Blob storage by the client
@@ -7,6 +18,7 @@ export async function POST(request: NextRequest) {
   const saveStartTime = Date.now();
   
   try {
+    requireAdmin();
     const body = await request.json();
     const { 
       blobUrl, 
@@ -61,25 +73,28 @@ export async function POST(request: NextRequest) {
     console.log("💾 [SAVE METADATA END] " + "=".repeat(60) + "\n");
 
     return NextResponse.json({ video }, { status: 201 });
-  } catch (error) {
+  } catch (err: any) {
+    if (err?.code === 'NOT_ADMIN' || err?.message === 'NOT_ADMIN') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const saveTime = (Date.now() - saveStartTime) / 1000;
     console.error("\n❌ [SAVE METADATA ERROR] " + "=".repeat(60));
     console.error(`   Failed after: ${saveTime.toFixed(2)}s`);
-    console.error(`   Error type:`, error?.constructor?.name);
-    console.error(`   Error message:`, error instanceof Error ? error.message : String(error));
-    if (error instanceof Error && error.stack) {
-      console.error(`   Stack:`, error.stack);
+    console.error(`   Error type:`, err?.constructor?.name);
+    console.error(`   Error message:`, err instanceof Error ? err.message : String(err));
+    if (err instanceof Error && err.stack) {
+      console.error(`   Stack:`, err.stack);
     }
     console.error("❌ [SAVE METADATA ERROR END] " + "=".repeat(60) + "\n");
   
     const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
+      err instanceof Error ? err.message : "Unknown error";
   
     return NextResponse.json(
       { 
         error: errorMessage,
-        details: error instanceof Error ? error.stack : String(error),
-        errorType: error?.constructor?.name || typeof error
+        details: err instanceof Error ? err.stack : String(err),
+        errorType: err?.constructor?.name || typeof err
       },
       { status: 500 }
     );
