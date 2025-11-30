@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 
+// Enforce BLOB_READ_WRITE_TOKEN is set - fail loudly if missing
+if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  throw new Error('BLOB_READ_WRITE_TOKEN missing – uploads disabled. Set BLOB_READ_WRITE_TOKEN in environment variables.');
+}
+
 // POST - Upload file directly to Blob (server-side)
 // This route handles the file upload server-side to avoid client-side limitations
 export async function POST(request: NextRequest) {
