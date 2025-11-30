@@ -7,7 +7,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("POSTGRES_URL")
+  url      = env("DATABASE_URL")
 }
 
 model Video {
@@ -21,11 +21,16 @@ model Video {
   file_name    String    @db.VarChar(255)
   file_size    BigInt?
   duration     Int?
+  display_date DateTime? @db.Timestamp
+  visible      Boolean   @default(true)  // Single source of truth for visibility
   created_at   DateTime  @default(now())
   updated_at   DateTime  @default(now()) @updatedAt
 
   @@index([category])
   @@index([created_at(sort: Desc)])
+  @@index([display_date(sort: Desc)])
+  @@index([visible])
   @@map("videos")
 }
+
 

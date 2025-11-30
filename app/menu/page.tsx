@@ -223,6 +223,7 @@ function MenuButton({
 }
 
 export default function MainMenuPage() {
+  const router = useRouter()
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
   const [follower1, setFollower1] = useState({ x: 0, y: 0 })
   const [follower2, setFollower2] = useState({ x: 0, y: 0 })
@@ -733,6 +734,23 @@ export default function MainMenuPage() {
           <MenuButton label="Music" category="music-video" />
           <MenuButton label="Launch Videos" category="industry-work" />
           <MenuButton label="Clothing" category="clothing" />
+          {/* Temporary experimental routes for geometric and circle video selectors */}
+          <div className="mt-4 flex flex-col items-center gap-1 text-[10px] uppercase tracking-[0.3em]">
+            <button
+              type="button"
+              onClick={() => router.push("/geometric-video-test")}
+              className="text-red-500 hover:text-red-700 transition-colors"
+            >
+              Geometric Test
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/circle-video-test")}
+              className="text-red-400 hover:text-red-700 transition-colors"
+            >
+              Circle Test
+            </button>
+          </div>
         </div>
       </div>
     </main>

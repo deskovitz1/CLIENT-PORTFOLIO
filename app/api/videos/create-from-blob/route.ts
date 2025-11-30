@@ -1,39 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getVideos, createVideo, getIntroVideo } from "@/lib/db";
+import { createVideo } from "@/lib/db";
 
-// GET all videos (excludes intro video by default)
-export async function GET(request: NextRequest) {
-  try {
-    console.log("GET /api/videos - Fetching videos");
-    const searchParams = request.nextUrl.searchParams;
-    const category = searchParams.get("category");
-    const includeIntro = searchParams.get("includeIntro") === "true";
-    
-    console.log("Category filter:", category || "none");
-    console.log("Include intro:", includeIntro);
-    
-    // If includeIntro=true (admin page), include hidden videos
-    // Otherwise (public pages), exclude hidden videos at database level
-    // getVideos handles filtering by visible boolean automatically
-    const videos = await getVideos(category || undefined, !includeIntro, includeIntro);
-    
-    console.log(`Found ${videos.length} video(s)`);
-    return NextResponse.json({ videos });
-  } catch (error) {
-    console.error("Error fetching videos:", error);
-    console.error("Error details:", error instanceof Error ? error.message : String(error));
-    console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace");
-    return NextResponse.json(
-      { 
-        error: "Failed to fetch videos",
-        details: error instanceof Error ? error.message : String(error)
-      },
-      { status: 500 }
-    );
-  }
-}
-
-// POST - Save video metadata after direct upload to Blob
+// POST - Save video metadata after client-side Blob upload
 // The file is already uploaded directly to Blob storage by the client
 export async function POST(request: NextRequest) {
   const saveStartTime = Date.now();
@@ -42,7 +10,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { 
       blobUrl, 
-      pathname,
+      blobPath,
       title, 
       description, 
       category, 

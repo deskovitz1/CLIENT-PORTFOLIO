@@ -11,7 +11,8 @@
     "verify-env": "tsx scripts/verify-env.ts",
     "check-vercel-env": "bash scripts/check-vercel-env.sh",
     "upload-video": "tsx scripts/upload-video.ts",
-    "find-video": "tsx scripts/find-video-url.ts"
+    "find-video": "tsx scripts/find-video-url.ts",
+    "import-blob-videos": "tsx scripts/import-blob-videos.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

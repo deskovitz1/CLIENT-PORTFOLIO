@@ -13,7 +13,7 @@
 
 // Small splash logo video (plays first, auto-plays, small size)
 export const SPLASH_VIDEO_URL =
-  "https://f8itx2l7pd6t7gmj.public.blob.vercel-storage.com/mp4%20circus%20logo-8YUWo7f9uTD2Nc4t14hdsuiOfYgAQe.mp4";
+  "https://f8itx2l7pd6t7gmj.public.blob.vercel-storage.com/CIRCUS%20TENT%20INTRO%20VID.mp4";
 
 // Enter video (plays second, full-screen, requires click to enter)
 export const ENTER_VIDEO_URL =
