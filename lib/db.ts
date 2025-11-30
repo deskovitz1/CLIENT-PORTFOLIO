@@ -307,7 +307,8 @@ export async function updateVideo(
     console.log(`[updateVideo] Update successful, fetching video data...`);
     
     // Fetch the complete updated video using raw SQL (avoids schema issues)
-    const fetchQuery = `SELECT id, title, description, category, video_url, thumbnail_url, blob_url, file_name, file_size, duration, created_at, updated_at FROM videos WHERE id = $1`;
+    // Use SELECT * to get all columns regardless of schema
+    const fetchQuery = `SELECT * FROM videos WHERE id = $1`;
     const fetchResults = await prisma.$queryRawUnsafe<Array<any>>(fetchQuery, id) as any[];
     
     if (!fetchResults || fetchResults.length === 0) {
@@ -330,8 +331,8 @@ export async function updateVideo(
       file_name: updatedVideo.file_name,
       file_size: updatedVideo.file_size ? Number(updatedVideo.file_size) : null,
       duration: updatedVideo.duration || null,
-      display_date: null, // Not in basic schema, set to null
-      is_visible: true, // Default to visible
+      display_date: updatedVideo.display_date ? (typeof updatedVideo.display_date === 'string' ? updatedVideo.display_date : updatedVideo.display_date.toISOString()) : null,
+      is_visible: updatedVideo.is_visible !== null && updatedVideo.is_visible !== undefined ? Boolean(updatedVideo.is_visible) : true,
       created_at: updatedVideo.created_at ? (typeof updatedVideo.created_at === 'string' ? updatedVideo.created_at : updatedVideo.created_at.toISOString()) : new Date().toISOString(),
       updated_at: updatedVideo.updated_at ? (typeof updatedVideo.updated_at === 'string' ? updatedVideo.updated_at : updatedVideo.updated_at.toISOString()) : new Date().toISOString(),
     } as Video;
