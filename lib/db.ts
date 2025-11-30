@@ -356,7 +356,7 @@ export async function updateVideo(
       const rawResults = await prisma.$queryRawUnsafe<Array<any>>(
         `SELECT id, title, description, category, video_url, thumbnail_url, blob_url, file_name, file_size, duration, display_date, is_visible, created_at, updated_at FROM videos WHERE id = $1`,
         id
-      );
+      ) as any[];
       if (!rawResults || rawResults.length === 0) {
         return null;
       }
