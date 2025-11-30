@@ -536,9 +536,8 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
   const [uploadTotal, setUploadTotal] = useState(0) // total bytes
   const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map())
   const addVideoFormRef = useRef<HTMLFormElement | null>(null)
-  const uploadXhrRef = useRef<XMLHttpRequest | null>(null)
   const uploadStartTimeRef = useRef<number | null>(null)
-  const uploadAbortControllerRef = useRef<AbortController | null>(null)
+  const uploadAbortControllerRef = useRef<AbortController | null>(null) // For client-side blob upload cancellation
 
   const addDebugLog = (type: DebugLog["type"], message: string, data?: any) => {
     const log: DebugLog = {
