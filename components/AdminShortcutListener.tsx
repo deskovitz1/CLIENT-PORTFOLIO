@@ -14,10 +14,10 @@ export function AdminShortcutListener() {
       }
 
       const key = e.key.toLowerCase();
-      const isCmdShiftC = e.shiftKey && key === 'c' && e.metaKey; // Cmd+Shift+C (Mac)
-      const isCtrlShiftC = e.shiftKey && key === 'c' && e.ctrlKey; // Ctrl+Shift+C (Win/Linux)
+      const isCmdShiftA = e.shiftKey && key === 'a' && e.metaKey; // Cmd+Shift+A (Mac)
+      const isCtrlShiftA = e.shiftKey && key === 'a' && e.ctrlKey; // Ctrl+Shift+A (Win/Linux)
 
-      if (!isCmdShiftC && !isCtrlShiftC) return;
+      if (!isCmdShiftA && !isCtrlShiftA) return;
 
       // Always prompt for password (no check for isAdmin)
       const password = window.prompt('Enter admin password');
