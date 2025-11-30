@@ -189,33 +189,40 @@ export async function PATCH(
     const body = await request.json();
     const { title, description, category, display_date, is_visible } = body;
 
-    console.log(`Updating video ID ${id}:`, { title, description, category, display_date, is_visible });
+    console.log(`[PATCH /api/videos/${id}] Updating video:`, { title, description, category, display_date, is_visible });
+
+    // Build update data with only provided fields
+    const updateData: any = {};
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (category !== undefined) updateData.category = category;
+    if (display_date !== undefined) updateData.display_date = display_date;
+    if (is_visible !== undefined) updateData.is_visible = is_visible;
+
+    console.log(`[PATCH /api/videos/${id}] Update data:`, updateData);
 
     try {
-      const video = await updateVideo(id, {
-        title,
-        description,
-        category,
-        display_date,
-        is_visible,
-      });
+      const video = await updateVideo(id, updateData);
 
       if (!video) {
-        console.error(`Video ${id} not found for update`);
+        console.error(`[PATCH /api/videos/${id}] Video not found for update`);
         return NextResponse.json(
           { error: "Video not found or update failed" },
           { status: 404 }
         );
       }
 
-      console.log(`Video ${id} updated successfully`);
+      console.log(`[PATCH /api/videos/${id}] Video updated successfully`);
       return NextResponse.json({ video });
     } catch (updateError: any) {
-      console.error("Update error:", updateError);
-      console.error("Error type:", updateError?.constructor?.name);
-      console.error("Error message:", updateError instanceof Error ? updateError.message : String(updateError));
-      console.error("Error code:", updateError?.code);
-      console.error("Error meta:", updateError?.meta);
+      console.error(`[PATCH /api/videos/${id}] Update error:`, updateError);
+      console.error(`[PATCH /api/videos/${id}] Error type:`, updateError?.constructor?.name);
+      console.error(`[PATCH /api/videos/${id}] Error message:`, updateError instanceof Error ? updateError.message : String(updateError));
+      console.error(`[PATCH /api/videos/${id}] Error code:`, updateError?.code);
+      console.error(`[PATCH /api/videos/${id}] Error meta:`, updateError?.meta);
+      if (updateError?.stack) {
+        console.error(`[PATCH /api/videos/${id}] Error stack:`, updateError.stack);
+      }
       
       return NextResponse.json(
         { 
