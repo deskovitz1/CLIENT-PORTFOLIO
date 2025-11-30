@@ -1,5 +1,10 @@
 import { PrismaClient } from "@prisma/client";
 
+// Enforce DATABASE_URL is set - fail loudly if missing
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL missing – app cannot start. Set DATABASE_URL in environment variables.');
+}
+
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 export const prisma =

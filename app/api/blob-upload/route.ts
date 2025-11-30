@@ -4,6 +4,11 @@ import {
   type HandleUploadBody,
 } from '@vercel/blob/client';
 
+// Enforce BLOB_READ_WRITE_TOKEN is set - fail loudly if missing
+if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  throw new Error('BLOB_READ_WRITE_TOKEN missing – uploads disabled. Set BLOB_READ_WRITE_TOKEN in environment variables.');
+}
+
 export async function POST(request: Request) {
   const body = (await request.json()) as HandleUploadBody;
 

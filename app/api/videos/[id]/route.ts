@@ -3,6 +3,11 @@ import { cookies } from "next/headers";
 import { deleteVideo, getVideoById, updateVideo } from "@/lib/db";
 import { del } from "@vercel/blob";
 
+// Enforce BLOB_READ_WRITE_TOKEN is set - fail loudly if missing
+if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  throw new Error('BLOB_READ_WRITE_TOKEN missing – blob operations disabled. Set BLOB_READ_WRITE_TOKEN in environment variables.');
+}
+
 function requireAdmin() {
   const store = cookies();
   const admin = store.get('admin')?.value;
