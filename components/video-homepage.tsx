@@ -35,6 +35,7 @@ function FeaturedVideoItem({ video, onChanged, onVideoClick, videoRefs, onVideoL
   const [description, setDescription] = useState(video.description ?? '')
   const [saving, setSaving] = useState(false)
   const [showActions, setShowActions] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   async function save() {
     setSaving(true)
@@ -143,61 +144,81 @@ function FeaturedVideoItem({ video, onChanged, onVideoClick, videoRefs, onVideoL
         {/* Featured Video Thumbnail */}
         <div className="relative aspect-video rounded-lg overflow-hidden mb-4 bg-black">
           {videoUrl ? (
-            <video
-              ref={(el) => {
-                if (el) {
-                  videoRefs.current.set(video.id, el)
-                } else {
-                  videoRefs.current.delete(video.id)
-                }
-              }}
-              src={videoUrl}
-              className="w-full h-full object-cover"
-              preload="auto"
-              muted
-              playsInline
-              onLoadedMetadata={(e) => onVideoLoad(video.id, e)}
-              onError={(e) => onVideoError(video.id, e)}
-              onMouseEnter={async (e) => {
-                const videoEl = e.currentTarget
-                if (!videoEl.isConnected) return
-                
-                try {
-                  if (videoEl.readyState < 3) {
-                    await new Promise((resolve) => {
-                      const handleCanPlay = () => {
-                        videoEl.removeEventListener("canplay", handleCanPlay)
-                        resolve(undefined)
-                      }
-                      videoEl.addEventListener("canplay", handleCanPlay)
-                    })
+            <>
+              <video
+                ref={(el) => {
+                  if (el) {
+                    videoRefs.current.set(video.id, el)
+                  } else {
+                    videoRefs.current.delete(video.id)
+                  }
+                }}
+                src={videoUrl}
+                poster={video.thumbnail_url || undefined}
+                className="w-full h-full object-cover"
+                preload="auto"
+                muted
+                playsInline
+                onLoadedMetadata={(e) => onVideoLoad(video.id, e)}
+                onError={(e) => onVideoError(video.id, e)}
+                onWaiting={() => setIsLoading(true)}
+                onCanPlay={() => setIsLoading(false)}
+                onPlaying={() => setIsLoading(false)}
+                onMouseEnter={async (e) => {
+                  const videoEl = e.currentTarget
+                  if (!videoEl.isConnected) return
+                  
+                  // Start loading video data immediately on hover
+                  if (videoEl.readyState < 2) {
+                    videoEl.load()
                   }
                   
-                  if (videoEl.currentTime < 0.5) {
-                    videoEl.currentTime = 0.5
-                  }
-                  
-                  await videoEl.play()
-                } catch (error: any) {
-                  // Silently handle AbortError
-                }
-              }}
-              onMouseLeave={(e) => {
-                const videoEl = e.currentTarget
-                if (!videoEl.isConnected) return
-                
-                requestAnimationFrame(() => {
-                  if (videoEl.isConnected) {
-                    try {
-                      videoEl.pause()
-                      videoEl.currentTime = 0
-                    } catch (error) {
-                      // Silently handle pause errors
+                  try {
+                    // Wait for video to be ready to play
+                    if (videoEl.readyState < 3) {
+                      await new Promise((resolve) => {
+                        const handleCanPlay = () => {
+                          videoEl.removeEventListener("canplay", handleCanPlay)
+                          resolve(undefined)
+                        }
+                        videoEl.addEventListener("canplay", handleCanPlay)
+                        // Start loading immediately
+                        videoEl.load()
+                      })
                     }
+                    
+                    if (videoEl.currentTime < 0.5) {
+                      videoEl.currentTime = 0.5
+                    }
+                    
+                    await videoEl.play()
+                  } catch (error: any) {
+                    // Silently handle AbortError
                   }
-                })
-              }}
-            />
+                }}
+                onMouseLeave={(e) => {
+                  const videoEl = e.currentTarget
+                  if (!videoEl.isConnected) return
+                  
+                  requestAnimationFrame(() => {
+                    if (videoEl.isConnected) {
+                      try {
+                        videoEl.pause()
+                        videoEl.currentTime = 0
+                      } catch (error) {
+                        // Silently handle pause errors
+                      }
+                    }
+                  })
+                }}
+              />
+              {/* Loading Spinner Overlay */}
+              {isLoading && (
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+                  <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+            </>
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-red-900/30 border-2 border-red-500">
               <div className="text-center p-4">
@@ -281,18 +302,20 @@ interface VideoItemProps {
   onChanged: () => void
   onSelect: () => void
   videoRefs: React.MutableRefObject<Map<number, HTMLVideoElement>>
+  observerRef: React.MutableRefObject<IntersectionObserver | null>
   onVideoLoad: (videoId: number, event: React.SyntheticEvent<HTMLVideoElement>) => void
   onVideoError: (videoId: number, event: React.SyntheticEvent<HTMLVideoElement>) => void
   formatDate: (dateString: string) => string
 }
 
-function VideoItem({ video, onChanged, onSelect, videoRefs, onVideoLoad, onVideoError, formatDate }: VideoItemProps) {
+function VideoItem({ video, onChanged, onSelect, videoRefs, observerRef, onVideoLoad, onVideoError, formatDate }: VideoItemProps) {
   const { isAdmin } = useAdmin()
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(video.title)
   const [description, setDescription] = useState(video.description ?? '')
   const [saving, setSaving] = useState(false)
   const [showActions, setShowActions] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   async function save() {
     setSaving(true)
@@ -398,61 +421,89 @@ function VideoItem({ video, onChanged, onSelect, videoRefs, onVideoLoad, onVideo
       {/* Sidebar Video Thumbnail */}
       <div className="relative w-40 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-black">
         {videoUrl ? (
-          <video
-            ref={(el) => {
-              if (el) {
-                videoRefs.current.set(video.id, el)
-              } else {
-                videoRefs.current.delete(video.id)
-              }
-            }}
-            src={videoUrl}
-            className="w-full h-full object-cover"
-            preload="auto"
-            muted
-            playsInline
-            onLoadedMetadata={(e) => onVideoLoad(video.id, e)}
-            onError={(e) => onVideoError(video.id, e)}
-            onMouseEnter={async (e) => {
-              const videoEl = e.currentTarget
-              if (!videoEl.isConnected) return
-              
-              try {
-                if (videoEl.readyState < 3) {
-                  await new Promise((resolve) => {
-                    const handleCanPlay = () => {
-                      videoEl.removeEventListener("canplay", handleCanPlay)
-                      resolve(undefined)
-                    }
-                    videoEl.addEventListener("canplay", handleCanPlay)
-                  })
-                }
-                
-                if (videoEl.currentTime < 0.5) {
-                  videoEl.currentTime = 0.5
-                }
-                
-                await videoEl.play()
-              } catch (error: any) {
-                // Silently handle AbortError
-              }
-            }}
-            onMouseLeave={(e) => {
-              const videoEl = e.currentTarget
-              if (!videoEl.isConnected) return
-              
-              requestAnimationFrame(() => {
-                if (videoEl.isConnected) {
-                  try {
-                    videoEl.pause()
-                    videoEl.currentTime = 0
-                  } catch (error) {
-                    // Silently handle pause errors
+          <>
+            <video
+              ref={(el) => {
+                if (el) {
+                  videoRefs.current.set(video.id, el)
+                  // Observe video element for lazy loading
+                  if (observerRef.current) {
+                    observerRef.current.observe(el)
                   }
+                } else {
+                  const oldEl = videoRefs.current.get(video.id)
+                  if (oldEl && observerRef.current) {
+                    observerRef.current.unobserve(oldEl)
+                  }
+                  videoRefs.current.delete(video.id)
                 }
-              })
-            }}
-          />
+              }}
+              src={videoUrl}
+              poster={video.thumbnail_url || undefined}
+              className="w-full h-full object-cover"
+              preload="metadata"
+              muted
+              playsInline
+              onLoadedMetadata={(e) => onVideoLoad(video.id, e)}
+              onError={(e) => onVideoError(video.id, e)}
+              onWaiting={() => setIsLoading(true)}
+              onCanPlay={() => setIsLoading(false)}
+              onPlaying={() => setIsLoading(false)}
+              onMouseEnter={async (e) => {
+                const videoEl = e.currentTarget
+                if (!videoEl.isConnected) return
+                
+                // Start loading video data immediately on hover
+                if (videoEl.readyState < 2) {
+                  videoEl.load()
+                }
+                
+                try {
+                  // Wait for video to be ready to play
+                  if (videoEl.readyState < 3) {
+                    await new Promise((resolve) => {
+                      const handleCanPlay = () => {
+                        videoEl.removeEventListener("canplay", handleCanPlay)
+                        resolve(undefined)
+                      }
+                      videoEl.addEventListener("canplay", handleCanPlay)
+                      // Start loading immediately
+                      videoEl.load()
+                    })
+                  }
+                  
+                  if (videoEl.currentTime < 0.5) {
+                    videoEl.currentTime = 0.5
+                  }
+                  
+                  await videoEl.play()
+                } catch (error: any) {
+                  // Silently handle AbortError
+                }
+              }}
+              onMouseLeave={(e) => {
+                const videoEl = e.currentTarget
+                if (!videoEl.isConnected) return
+                
+                requestAnimationFrame(() => {
+                  if (videoEl.isConnected) {
+                    try {
+                      videoEl.pause()
+                      videoEl.currentTime = 0
+                    } catch (error) {
+                      // Silently handle pause errors
+                    }
+                  }
+                })
+              }}
+            />
+            {/* Loading Spinner Overlay */}
+            {isLoading && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+                <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+          </>
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-red-900/30">
             <AlertCircle className="w-4 h-4 text-red-400" />
@@ -542,6 +593,7 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
   const addVideoFormRef = useRef<HTMLFormElement | null>(null)
   const uploadStartTimeRef = useRef<number | null>(null)
   const uploadAbortControllerRef = useRef<AbortController | null>(null) // For client-side blob upload cancellation
+  const observerRef = useRef<IntersectionObserver | null>(null)
 
   const addDebugLog = (type: DebugLog["type"], message: string, data?: any) => {
     const log: DebugLog = {
@@ -617,6 +669,18 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
       setLoading(false)
     }
   }
+
+  // Preload featured video immediately when it changes
+  useEffect(() => {
+    if (featuredVideo) {
+      const videoEl = videoRefs.current.get(featuredVideo.id)
+      if (videoEl && videoEl.readyState === 0) {
+        // Start loading featured video immediately
+        videoEl.load()
+        addDebugLog("info", "Preloading featured video", { videoId: featuredVideo.id })
+      }
+    }
+  }, [featuredVideo])
 
   const handleCategoryClick = (category: string) => {
     addDebugLog("info", "Category clicked", { category })
@@ -1202,6 +1266,7 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
                       handleVideoClick(video)
                     }}
                     videoRefs={videoRefs}
+                    observerRef={observerRef}
                     onVideoLoad={handleVideoLoad}
                     onVideoError={handleVideoError}
                     formatDate={formatDate}

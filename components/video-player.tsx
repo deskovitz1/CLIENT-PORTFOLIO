@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Video } from "@/lib/db"
@@ -13,6 +14,8 @@ interface VideoPlayerProps {
 }
 
 export function VideoPlayer({ video, videoUrl, title, isOpen, onClose }: VideoPlayerProps) {
+  const [isLoading, setIsLoading] = useState(false)
+  
   // Get URL using the same logic as the hover preview
   // If video object is passed, use video.video_url || video.blob_url
   // If only videoUrl string is passed, use that
@@ -63,6 +66,7 @@ export function VideoPlayer({ video, videoUrl, title, isOpen, onClose }: VideoPl
         
         <video
           src={url}
+          poster={video?.thumbnail_url || undefined}
           controls
           autoPlay
           muted
@@ -70,7 +74,31 @@ export function VideoPlayer({ video, videoUrl, title, isOpen, onClose }: VideoPl
           preload="auto"
           className="w-full h-full"
           style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          onLoadStart={() => {
+            setIsLoading(true)
+            // Start loading immediately when modal opens
+            const videoEl = document.querySelector('video[src="' + url + '"]') as HTMLVideoElement
+            if (videoEl && videoEl.readyState < 2) {
+              videoEl.load()
+            }
+          }}
+          onWaiting={() => {
+            setIsLoading(true)
+            console.log("Video waiting for data in modal", { url })
+          }}
+          onCanPlay={() => {
+            setIsLoading(false)
+            console.log("Video can play in modal", { url })
+          }}
+          onPlaying={() => setIsLoading(false)}
+          onCanPlayThrough={() => {
+            console.log("Video fully buffered in modal", { url })
+          }}
+          onPlay={() => {
+            console.log("Video started playing in modal", { url })
+          }}
           onError={(e) => {
+            setIsLoading(false)
             const video = e.currentTarget
             console.error("Video playback error:", {
               error: video.error,
@@ -84,22 +112,17 @@ export function VideoPlayer({ video, videoUrl, title, isOpen, onClose }: VideoPl
           onLoadedMetadata={() => {
             console.log("Video metadata loaded in modal", { url })
           }}
-          onCanPlay={() => {
-            console.log("Video can play in modal", { url })
-          }}
-          onCanPlayThrough={() => {
-            console.log("Video fully buffered in modal", { url })
-          }}
-          onWaiting={() => {
-            console.log("Video waiting for data in modal", { url })
-          }}
-          onPlay={() => {
-            console.log("Video started playing in modal", { url })
-          }}
         />
         
+        {/* Loading Spinner Overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-10">
+            <div className="w-16 h-16 border-4 border-white border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+        
         {title && (
-          <div className="absolute bottom-4 left-4 right-4">
+          <div className="absolute bottom-4 left-4 right-4 z-20">
             <h3 className="text-gray-100 text-lg font-light drop-shadow-md">{title}</h3>
           </div>
         )}
