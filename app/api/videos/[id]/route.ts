@@ -211,9 +211,9 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { title, description, category, display_date, is_visible } = body;
+    const { title, description, category, display_date, is_visible, thumbnail_url } = body;
 
-    console.log(`[PATCH /api/videos/${id}] Updating video:`, { title, description, category, display_date, is_visible });
+    console.log(`[PATCH /api/videos/${id}] Updating video:`, { title, description, category, display_date, is_visible, thumbnail_url });
 
     // Build update data with only provided fields
     const updateData: any = {};
@@ -222,6 +222,7 @@ export async function PATCH(
     if (category !== undefined) updateData.category = category;
     if (display_date !== undefined) updateData.display_date = display_date;
     if (is_visible !== undefined) updateData.is_visible = is_visible;
+    if (thumbnail_url !== undefined) updateData.thumbnail_url = thumbnail_url;
 
     console.log(`[PATCH /api/videos/${id}] Update data:`, updateData);
 
@@ -236,7 +237,22 @@ export async function PATCH(
         );
       }
 
-      console.log(`[PATCH /api/videos/${id}] Video updated successfully`);
+      console.log(`[PATCH /api/videos/${id}] Video updated successfully:`, {
+        id: video.id,
+        title: video.title,
+        display_date: video.display_date,
+        requested_display_date: display_date
+      });
+      
+      // Check if display_date was requested but not saved (column might not exist)
+      if (display_date !== undefined && !video.display_date && display_date !== null) {
+        console.warn(`[PATCH /api/videos/${id}] WARNING: display_date was requested but not saved. Column may not exist.`);
+        return NextResponse.json({ 
+          video,
+          warning: "Date field may not be saved. Please ensure display_date column exists in database."
+        });
+      }
+      
       return NextResponse.json({ video });
     } catch (updateError: any) {
       console.error(`[PATCH /api/videos/${id}] Update error:`, updateError);

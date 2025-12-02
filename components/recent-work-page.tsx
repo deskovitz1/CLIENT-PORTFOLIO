@@ -46,12 +46,13 @@ export function RecentWorkPage() {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-black">
+      {/* BANDWIDTH-SAFE: Changed from preload="auto" to "metadata" to prevent full video download */}
       <video
         ref={videoRef}
         className={`absolute inset-0 h-full w-full object-cover transition-all duration-1000 ${
           isBlurred ? "blur-md scale-105" : "blur-0 scale-100"
         }`}
-        preload="auto"
+        preload="metadata"
         playsInline
         muted
       >

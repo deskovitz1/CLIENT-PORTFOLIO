@@ -24,21 +24,13 @@ export async function GET(request: NextRequest) {
     console.log("Include intro:", includeIntro);
     const allVideos = await getVideos(category || undefined, !includeIntro);
     
-    // Filter out videos that are not visible (unless includeIntro is true, then show all)
-    // Also filter out videos with category "__HIDDEN__" (workaround if is_visible column doesn't exist)
-    const videos = includeIntro 
-      ? allVideos 
-      : allVideos.filter(v => {
-          // Check is_visible field if it exists
-          if (v.is_visible !== undefined && v.is_visible !== null) {
-            return v.is_visible !== false;
-          }
-          // Fallback: filter out videos with hidden category marker
-          return v.category !== "__HIDDEN__";
-        });
+    console.log(`getVideos returned ${allVideos.length} video(s)`);
     
-    console.log(`Found ${videos.length} video(s) (${allVideos.length} total)`);
-    return NextResponse.json({ videos });
+    // BANDWIDTH-SAFE: Add aggressive caching headers for video metadata
+    // Video URLs in response are immutable Blob URLs, safe to cache for 1 year
+    const response = NextResponse.json({ videos: allVideos });
+    response.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    return response;
   } catch (error) {
     console.error("Error fetching videos:", error);
     console.error("Error details:", error instanceof Error ? error.message : String(error));

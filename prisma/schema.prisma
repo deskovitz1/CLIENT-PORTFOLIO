@@ -23,12 +23,14 @@ model Video {
   duration     Int?
   display_date DateTime? @db.Timestamp
   is_visible   Boolean?  @default(true)
+  sort_order   Int       @default(0) @map("sort_order")
   created_at   DateTime  @default(now())
   updated_at   DateTime  @default(now()) @updatedAt
 
   @@index([category])
   @@index([created_at(sort: Desc)])
   @@index([display_date(sort: Desc)])
+  @@index([sort_order])
   @@map("videos")
 }
 

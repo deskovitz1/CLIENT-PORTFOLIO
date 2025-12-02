@@ -12,7 +12,10 @@ export async function GET() {
     }
     
     console.log("Found intro video:", introVideo.id);
-    return NextResponse.json({ video: introVideo });
+    // BANDWIDTH-SAFE: Add aggressive caching headers for intro video metadata
+    const response = NextResponse.json({ video: introVideo });
+    response.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    return response;
   } catch (error) {
     console.error("Error fetching intro video:", error);
     return NextResponse.json(

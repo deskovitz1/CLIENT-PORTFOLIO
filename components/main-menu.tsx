@@ -15,12 +15,6 @@ export function MainMenu({ onCategoryClick, onAllVideosClick }: MainMenuProps) {
       <header className="sticky top-0 z-50 bg-[#0f0f0f]/80 backdrop-blur-sm border-b border-[#272727] px-4 md:px-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between h-16">
           <h1 className="text-2xl font-bold">CIRCUS17</h1>
-          <a
-            href="/admin"
-            className="px-4 py-2 text-sm bg-[#272727] hover:bg-[#3f3f3f] rounded-full transition-colors"
-          >
-            Admin
-          </a>
         </div>
       </header>
 

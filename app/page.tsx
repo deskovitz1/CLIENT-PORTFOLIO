@@ -16,14 +16,15 @@ export default function IntroLanding() {
   const preloadVideoRef = useRef<HTMLVideoElement | null>(null)
   const router = useRouter()
 
-  // Aggressive preloading: Start loading door video immediately on mount
+  // BANDWIDTH-SAFE: Preload door video metadata only (not full video)
+  // Changed from aggressive preload="auto" + load() to metadata-only to prevent bandwidth spikes
   useEffect(() => {
     const preloadVideo = preloadVideoRef.current
     if (!preloadVideo) return
 
-    // Force aggressive preloading
-    preloadVideo.preload = "auto"
-    preloadVideo.load() // Force load start
+    // Only preload metadata (duration, dimensions) - NOT the full video file
+    preloadVideo.preload = "metadata"
+    // DO NOT call load() - let browser handle metadata loading naturally
 
     const handleCanPlayThrough = () => {
       console.log("Door video preloaded and ready!")
@@ -48,6 +49,14 @@ export default function IntroLanding() {
     return () => {
       preloadVideo.removeEventListener("canplaythrough", handleCanPlayThrough)
       preloadVideo.removeEventListener("progress", handleProgress)
+      // Pause preload video on cleanup to prevent play/pause conflicts
+      try {
+        if (!preloadVideo.paused) {
+          preloadVideo.pause()
+        }
+      } catch (err) {
+        // Ignore pause errors during cleanup
+      }
     }
   }, [])
 
@@ -64,9 +73,14 @@ export default function IntroLanding() {
       try {
         await video.play()
       } catch (err: any) {
-        if (err?.name !== "AbortError") {
-          console.error("Splash auto-play failed:", err)
+        // Silently ignore AbortError, NotAllowedError, and play/pause interruption errors
+        if (err?.name === "AbortError" || 
+            err?.name === "NotAllowedError" ||
+            err?.message?.includes("interrupted") ||
+            err?.message?.includes("pause()")) {
+          return
         }
+        console.error("Splash auto-play failed:", err)
       }
     }
 
@@ -90,6 +104,14 @@ export default function IntroLanding() {
       video.removeEventListener("canplay", handleCanPlay)
       video.removeEventListener("timeupdate", handleTimeUpdate)
       video.removeEventListener("ended", handleEnded)
+      // Pause video on cleanup to prevent play/pause conflicts
+      try {
+        if (!video.paused) {
+          video.pause()
+        }
+      } catch (err) {
+        // Ignore pause errors during cleanup
+      }
     }
   }, [stage])
 
@@ -98,30 +120,40 @@ export default function IntroLanding() {
     if (started) return
 
     const video = doorVideoRef.current
-    if (!video) return
+    if (!video) {
+      console.error("Door video ref is null")
+      return
+    }
+
+    console.log("Handle enter called, video readyState:", video.readyState)
+    console.log("Video src:", video.src)
+    console.log("Video networkState:", video.networkState)
 
     // Check if video is ready to play
-    if (video.readyState >= 3) {
-      // Video is ready, start playing
+    if (video.readyState >= 2) {
+      // Video has enough data to play (HAVE_CURRENT_DATA or better)
       setStarted(true)
       video.playbackRate = 1.0
       video.play().catch((err: any) => {
-        if (err?.name === "AbortError") {
-          console.warn("Door video play aborted (AbortError), ignoring.")
+        // Silently ignore AbortError, NotAllowedError, and play/pause interruption errors
+        if (err?.name === "AbortError" || 
+            err?.name === "NotAllowedError" ||
+            err?.message?.includes("interrupted") ||
+            err?.message?.includes("pause()")) {
           return
         }
         console.error("Door video play failed:", err)
       })
     } else {
       // Video not ready yet, wait for it
-      console.log("Video not ready yet, waiting...")
+      console.log("Video not ready yet, waiting... current readyState:", video.readyState)
       const checkReady = () => {
-        if (video.readyState >= 3) {
+        if (video.readyState >= 2) {
           setStarted(true)
           video.playbackRate = 1.0
           video.play().catch((err: any) => {
-            if (err?.name === "AbortError") {
-              console.warn("Door video play aborted (AbortError), ignoring.")
+            // Silently ignore AbortError and NotAllowedError
+            if (err?.name === "AbortError" || err?.name === "NotAllowedError") {
               return
             }
             console.error("Door video play failed:", err)
@@ -147,17 +179,18 @@ export default function IntroLanding() {
   if (stage === "splash") {
     return (
       <div className="relative w-screen h-screen bg-black flex items-center justify-center">
-        {/* Hidden preload video - starts loading immediately */}
+        {/* BANDWIDTH-SAFE: Hidden preload video - metadata only, no full video download */}
         <video
           ref={preloadVideoRef}
           src={ENTER_VIDEO_URL}
           className="hidden"
-          preload="auto"
+          preload="metadata"
           muted
           playsInline
         />
 
-        {/* Small centered video - responsive sizing */}
+        {/* BANDWIDTH-SAFE: Small centered video - metadata preload, autoplay only for intro UX */}
+        {/* ⚠️ PERMANENT: SPLASH_VIDEO_URL is defined in app/config/intro.ts and should NEVER be changed */}
         <div className={`${isMobile ? 'w-[90vw] h-[50vh] min-w-[280px] min-h-[200px]' : 'w-[60vw] h-[60vh] max-w-[1200px] max-h-[1200px] min-w-[400px] min-h-[400px]'}`}>
           <video
             ref={splashVideoRef}
@@ -167,7 +200,7 @@ export default function IntroLanding() {
             muted={true}
             controls={false}
             autoPlay
-            preload="auto"
+            preload="metadata"
             onLoadedMetadata={(e) => {
               console.log("Splash video loaded, duration:", e.currentTarget.duration)
               e.currentTarget.playbackRate = 1.25
@@ -198,6 +231,8 @@ export default function IntroLanding() {
   }
 
   // Stage 2: Door video with "CLICK TO ENTER"
+  // Note: Uses preload="auto" to show first frame immediately (intro UX requirement)
+  // ⚠️ PERMANENT: ENTER_VIDEO_URL is defined in app/config/intro.ts and should NEVER be changed
   return (
     <div className="relative w-screen h-screen bg-black overflow-hidden">
       <video
@@ -208,7 +243,36 @@ export default function IntroLanding() {
         muted={true}
         controls={false}
         preload="auto"
+        onLoadStart={() => {
+          console.log("Enter video load started")
+        }}
+        onLoadedData={() => {
+          console.log("Enter video loaded data, readyState:", doorVideoRef.current?.readyState)
+        }}
         onEnded={handleDoorVideoEnded}
+        onError={(e) => {
+          const error = e.currentTarget.error
+          console.error("Enter video error:", error)
+          console.error("Video src:", ENTER_VIDEO_URL)
+          console.error("Error code:", error?.code)
+          console.error("Error message:", error?.message)
+          if (error) {
+            switch (error.code) {
+              case 1: // MEDIA_ERR_ABORTED
+                console.error("Video loading aborted")
+                break
+              case 2: // MEDIA_ERR_NETWORK
+                console.error("Network error while loading video")
+                break
+              case 3: // MEDIA_ERR_DECODE
+                console.error("Error decoding video")
+                break
+              case 4: // MEDIA_ERR_SRC_NOT_SUPPORTED
+                console.error("Video format not supported")
+                break
+            }
+          }
+        }}
         onWaiting={() => {
           console.log("Enter video waiting for data")
         }}
@@ -218,14 +282,16 @@ export default function IntroLanding() {
         onLoadedMetadata={(e) => {
           // Play at normal speed (1.0x) - no speed increase
           e.currentTarget.playbackRate = 1.0
-          console.log("Door video loaded, duration:", e.currentTarget.duration)
+          console.log("Door video loaded metadata, duration:", e.currentTarget.duration)
+          console.log("Door video URL:", ENTER_VIDEO_URL)
+          console.log("Video readyState:", e.currentTarget.readyState)
           // If preload video exists, copy its buffered data
           if (preloadVideoRef.current && preloadVideoRef.current.readyState >= 3) {
             console.log("Using preloaded video data")
           }
         }}
         onCanPlay={(e) => {
-          console.log("Door video can play now")
+          console.log("Door video can play now, readyState:", e.currentTarget.readyState)
           setDoorVideoReady(true)
         }}
         onCanPlayThrough={() => {
@@ -249,9 +315,10 @@ export default function IntroLanding() {
         <button
           type="button"
           onClick={handleEnter}
-          className="absolute inset-0 flex items-center justify-center text-center text-white bg-black/20 z-10 min-h-[44px] min-w-[44px]"
+          className="absolute inset-0 flex items-center justify-center text-center text-white bg-black/40 z-10 min-h-[44px] min-w-[44px] cursor-pointer"
+          aria-label="Click to enter"
         >
-          <span className={`${isMobile ? 'text-xs' : 'text-sm md:text-base'} tracking-[0.15em] sm:tracking-[0.2em] font-light opacity-90 hover:opacity-100 transition-opacity`}>
+          <span className={`${isMobile ? 'text-xs' : 'text-sm md:text-base'} tracking-[0.15em] sm:tracking-[0.2em] font-light opacity-90 hover:opacity-100 transition-opacity pointer-events-none`}>
             {isMobile ? 'TAP TO ENTER' : 'CLICK TO ENTER'}
           </span>
         </button>

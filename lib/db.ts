@@ -13,6 +13,7 @@ export interface Video {
   duration: number | null;
   display_date: string | null;
   is_visible: boolean | null;
+  sort_order: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -32,13 +33,11 @@ export async function getVideos(category?: string, excludeIntro: boolean = true)
     // Build conditions array
     const conditions: any[] = []
     
-  if (category) {
+    if (category) {
       conditions.push({ category })
     }
     
     // Exclude intro video from regular listings (by filename)
-    // The intro video is configured in app/config/intro.ts
-    // We filter it out here so it doesn't appear in the /videos grid
     if (excludeIntro) {
       conditions.push({
         NOT: {
@@ -56,59 +55,58 @@ export async function getVideos(category?: string, excludeIntro: boolean = true)
       Object.assign(whereClause, conditions[0])
     }
     
-    // Order by created_at for now (display_date ordering will be enabled after database migration)
-    // TODO: Once display_date column exists in database, enable ordering by display_date for "recent-work"
-    const orderBy = { created_at: "desc" as const };
-    
+    // Use Prisma query - simple and reliable
+    // Sort by sort_order first (ascending), then by created_at (descending) as fallback
     let videos;
     try {
       videos = await prisma.video.findMany({
         where: whereClause,
-        orderBy,
+        orderBy: [
+          { sort_order: "asc" },
+          { created_at: "desc" }
+        ],
       });
-    } catch (error) {
-      // If there's a schema mismatch, try a simpler query
-      console.error("Error in findMany, trying raw query:", error);
-      const errorMsg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-      if (errorMsg.includes("column") || errorMsg.includes("does not exist")) {
-        // Use raw SQL query as fallback
-        const whereSql = category 
-          ? `WHERE category = '${category.replace(/'/g, "''")}'`
-          : excludeIntro 
-          ? `WHERE file_name NOT LIKE '%${INTRO_VIDEO_FILENAME.replace(/'/g, "''")}%'`
-          : "";
-        videos = await prisma.$queryRawUnsafe<Array<any>>(
-          `SELECT * FROM videos ${whereSql} ORDER BY created_at DESC LIMIT 100`
-        );
-      } else {
-        throw error;
+    } catch (prismaError: any) {
+      console.error("Prisma query failed, using raw SQL:", prismaError?.message);
+      // Fallback to raw SQL if Prisma fails
+      let sqlWhere = "";
+      if (category) {
+        sqlWhere += ` WHERE category = '${category.replace(/'/g, "''")}'`;
+      }
+      if (excludeIntro) {
+        sqlWhere += category ? ` AND file_name NOT LIKE '%${INTRO_VIDEO_FILENAME.replace(/'/g, "''")}%'` : ` WHERE file_name NOT LIKE '%${INTRO_VIDEO_FILENAME.replace(/'/g, "''")}%'`;
+      }
+      // Try to sort by sort_order, fallback to created_at
+      try {
+        videos = await prisma.$queryRawUnsafe<Array<any>>(`SELECT * FROM videos${sqlWhere} ORDER BY COALESCE(sort_order, 999999), created_at DESC`);
+      } catch {
+        videos = await prisma.$queryRawUnsafe<Array<any>>(`SELECT * FROM videos${sqlWhere} ORDER BY created_at DESC`);
       }
     }
     
-    return videos.map((v: any) => ({
-      ...v,
+    // Normalize Prisma DateTime objects to ISO strings for the Video interface
+    const mappedVideos = videos.map((v: any) => ({
+      id: v.id,
+      title: v.title || "",
+      description: v.description,
+      category: v.category,
+      video_url: v.video_url || v.blob_url || "",
+      thumbnail_url: v.thumbnail_url,
+      blob_url: v.blob_url || v.video_url || "",
+      file_name: v.file_name || "",
       file_size: v.file_size ? Number(v.file_size) : null,
-      display_date: v.display_date ? v.display_date.toISOString() : null,
-      is_visible: v.is_visible !== null && v.is_visible !== undefined ? Boolean(v.is_visible) : true, // Default to visible
+      duration: v.duration || null,
+      display_date: v.display_date ? (typeof v.display_date === 'string' ? v.display_date : v.display_date.toISOString()) : null,
+      is_visible: v.is_visible !== null && v.is_visible !== undefined ? Boolean(v.is_visible) : true,
+      sort_order: v.sort_order !== null && v.sort_order !== undefined ? Number(v.sort_order) : null,
       created_at: v.created_at ? (typeof v.created_at === 'string' ? v.created_at : v.created_at.toISOString()) : new Date().toISOString(),
       updated_at: v.updated_at ? (typeof v.updated_at === 'string' ? v.updated_at : v.updated_at.toISOString()) : new Date().toISOString(),
     })) as Video[];
+    
+    return mappedVideos;
   } catch (error) {
     console.error("Error in getVideos:", error);
-    console.error("Error type:", error?.constructor?.name);
-    console.error("Error message:", error instanceof Error ? error.message : String(error));
-    
-    // If there's a database error, return empty array instead of throwing
-    // This prevents the entire API from failing
-    if (error instanceof Error) {
-      const errorMsg = error.message.toLowerCase();
-      if (errorMsg.includes("column") || errorMsg.includes("unknown") || errorMsg.includes("does not exist")) {
-        console.warn("Database schema issue detected, returning empty array");
-        return [];
-      }
-    }
-    
-    throw error;
+    return [];
   }
 }
 
@@ -264,6 +262,8 @@ export async function updateVideo(
     category?: string;
     display_date?: string;
     is_visible?: boolean;
+    thumbnail_url?: string | null;
+    sort_order?: number | null;
   }
 ): Promise<Video | null> {
   try {
@@ -290,6 +290,32 @@ export async function updateVideo(
       values.push(data.category || null);
       paramIndex++;
     }
+    if (data.display_date !== undefined) {
+      updates.push(`display_date = $${paramIndex}`);
+      // Convert date string to Date object, or null if empty
+      // Date input format is YYYY-MM-DD, convert to proper Date object
+      const dateValue = data.display_date && data.display_date.trim() 
+        ? new Date(data.display_date + 'T00:00:00Z') // Add time to ensure consistent date
+        : null;
+      console.log(`[updateVideo] Converting display_date: "${data.display_date}" -> ${dateValue}`);
+      values.push(dateValue);
+      paramIndex++;
+    }
+    if (data.is_visible !== undefined) {
+      updates.push(`is_visible = $${paramIndex}`);
+      values.push(data.is_visible);
+      paramIndex++;
+    }
+    if (data.thumbnail_url !== undefined) {
+      updates.push(`thumbnail_url = $${paramIndex}`);
+      values.push(data.thumbnail_url || null);
+      paramIndex++;
+    }
+    if (data.sort_order !== undefined) {
+      updates.push(`sort_order = $${paramIndex}`);
+      values.push(data.sort_order);
+      paramIndex++;
+    }
     
     // Always update timestamp
     updates.push(`updated_at = $${paramIndex}`);
@@ -309,7 +335,71 @@ export async function updateVideo(
     console.log(`[updateVideo] SQL: ${query}`);
     console.log(`[updateVideo] Values:`, values);
     
-    const updateResult = await prisma.$queryRawUnsafe<Array<{ id: number }>>(query, ...values) as any[];
+    let updateResult: any[];
+    try {
+      updateResult = await prisma.$queryRawUnsafe<Array<{ id: number }>>(query, ...values) as any[];
+    } catch (queryError: any) {
+      // Check if error is due to missing display_date column
+      const errorMsg = queryError?.message?.toLowerCase() || '';
+      if (errorMsg.includes('display_date') && (errorMsg.includes('does not exist') || errorMsg.includes('column'))) {
+        console.warn(`[updateVideo] display_date column doesn't exist, trying without it...`);
+        
+        // Rebuild updates and values without display_date
+        const rebuiltUpdates: string[] = [];
+        const rebuiltValues: any[] = [];
+        let rebuildParamIndex = 1;
+        
+        if (data.title !== undefined) {
+          rebuiltUpdates.push(`title = $${rebuildParamIndex}`);
+          rebuiltValues.push(data.title);
+          rebuildParamIndex++;
+        }
+        if (data.description !== undefined) {
+          rebuiltUpdates.push(`description = $${rebuildParamIndex}`);
+          rebuiltValues.push(data.description || null);
+          rebuildParamIndex++;
+        }
+        if (data.category !== undefined) {
+          rebuiltUpdates.push(`category = $${rebuildParamIndex}`);
+          rebuiltValues.push(data.category || null);
+          rebuildParamIndex++;
+        }
+        // Skip display_date - column doesn't exist
+        if (data.is_visible !== undefined) {
+          rebuiltUpdates.push(`is_visible = $${rebuildParamIndex}`);
+          rebuiltValues.push(data.is_visible);
+          rebuildParamIndex++;
+        }
+        if (data.thumbnail_url !== undefined) {
+          rebuiltUpdates.push(`thumbnail_url = $${rebuildParamIndex}`);
+          rebuiltValues.push(data.thumbnail_url || null);
+          rebuildParamIndex++;
+        }
+        rebuiltUpdates.push(`updated_at = $${rebuildParamIndex}`);
+        rebuiltValues.push(new Date());
+        rebuildParamIndex++;
+        
+        const idParam = rebuildParamIndex;
+        rebuiltValues.push(id);
+        
+        const fallbackQuery = `UPDATE videos SET ${rebuiltUpdates.join(", ")} WHERE id = $${idParam} RETURNING id`;
+        console.log(`[updateVideo] Retrying without display_date: ${fallbackQuery}`);
+        
+        updateResult = await prisma.$queryRawUnsafe<Array<{ id: number }>>(fallbackQuery, ...rebuiltValues) as any[];
+        
+        // Log error about missing column - but don't throw if we successfully updated other fields
+        console.error(`[updateVideo] ERROR: display_date column doesn't exist in database. The date was not saved.`);
+        console.error(`[updateVideo] Other fields were updated successfully, but display_date was skipped.`);
+        console.error(`[updateVideo] To fix this, sync your Prisma schema to the database:`);
+        console.error(`  npm run db:push`);
+        console.error(`  npm run db:generate`);
+        
+        // Continue with the update (other fields were saved), but log the issue
+        // The API will return success, but display_date won't be saved
+      } else {
+        throw queryError;
+      }
+    }
     
     if (!updateResult || updateResult.length === 0) {
       console.error(`[updateVideo] Video ${id} not found`);
@@ -332,6 +422,15 @@ export async function updateVideo(
     console.log(`[updateVideo] Video ${id} updated successfully`);
     
     // Normalize the response to match Video interface
+    // Format display_date properly - if it's a Date object, convert to ISO string, then to YYYY-MM-DD format for date input
+    let displayDateFormatted = null;
+    if (updatedVideo.display_date) {
+      const dateObj = typeof updatedVideo.display_date === 'string' 
+        ? new Date(updatedVideo.display_date) 
+        : updatedVideo.display_date;
+      displayDateFormatted = dateObj.toISOString();
+    }
+    
     return {
       id: updatedVideo.id,
       title: updatedVideo.title,
@@ -343,7 +442,7 @@ export async function updateVideo(
       file_name: updatedVideo.file_name,
       file_size: updatedVideo.file_size ? Number(updatedVideo.file_size) : null,
       duration: updatedVideo.duration || null,
-      display_date: updatedVideo.display_date ? (typeof updatedVideo.display_date === 'string' ? updatedVideo.display_date : updatedVideo.display_date.toISOString()) : null,
+      display_date: displayDateFormatted,
       is_visible: updatedVideo.is_visible !== null && updatedVideo.is_visible !== undefined ? Boolean(updatedVideo.is_visible) : true,
       created_at: updatedVideo.created_at ? (typeof updatedVideo.created_at === 'string' ? updatedVideo.created_at : updatedVideo.created_at.toISOString()) : new Date().toISOString(),
       updated_at: updatedVideo.updated_at ? (typeof updatedVideo.updated_at === 'string' ? updatedVideo.updated_at : updatedVideo.updated_at.toISOString()) : new Date().toISOString(),

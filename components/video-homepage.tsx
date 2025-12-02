@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react"
 import { Video } from "@/lib/db"
 import { VideoPlayer } from "@/components/video-player"
-import { Play, Calendar, Bug, X, AlertCircle, Edit2, Trash2, Save, XCircle, Plus, Upload } from "lucide-react"
+import { Play, Calendar, Bug, X, AlertCircle, Edit2, Trash2, Save, XCircle, Plus, Upload, Image, ChevronUp, ChevronDown } from "lucide-react"
 import { upload } from '@vercel/blob/client'
 import { useAdmin } from "@/contexts/AdminContext"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -27,39 +27,145 @@ interface FeaturedVideoItemProps {
   onVideoLoad: (videoId: number, event: React.SyntheticEvent<HTMLVideoElement>) => void
   onVideoError: (videoId: number, event: React.SyntheticEvent<HTMLVideoElement>) => void
   formatDate: (dateString: string) => string
+  onReorder?: (videoId: number, direction: 'up' | 'down') => void
+  canMoveUp?: boolean
+  canMoveDown?: boolean
+  isDragging?: boolean
+  isDragOver?: boolean
+  onDragStart?: (videoId: number) => void
+  onDragOver?: (e: React.DragEvent, videoId: number) => void
+  onDragLeave?: () => void
+  onDrop?: (e: React.DragEvent, videoId: number) => void
+  onDragEnd?: () => void
 }
 
-function FeaturedVideoItem({ video, onChanged, onVideoClick, videoRefs, onVideoLoad, onVideoError, formatDate }: FeaturedVideoItemProps) {
+const CATEGORIES = [
+  { value: null, label: 'None (No Category)' },
+  { value: 'music-video', label: 'Music' },
+  { value: 'industry-work', label: 'Launch Videos' },
+  { value: 'clothing', label: 'Clothing' },
+  { value: 'live-events', label: 'LIVE EVENTS' },
+  { value: 'bts', label: 'BTS' },
+]
+
+function FeaturedVideoItem({ video, onChanged, onVideoClick, videoRefs, onVideoLoad, onVideoError, formatDate, onReorder, canMoveUp, canMoveDown, isDragging, isDragOver, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd }: FeaturedVideoItemProps) {
   const { isAdmin } = useAdmin()
   const isMobile = useIsMobile()
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(video.title)
   const [description, setDescription] = useState(video.description ?? '')
+  const [category, setCategory] = useState(video.category || null)
+  const [displayDate, setDisplayDate] = useState(video.display_date ? video.display_date.split('T')[0] : '')
   const [saving, setSaving] = useState(false)
+  const [uploadingThumbnail, setUploadingThumbnail] = useState(false)
   const [showActions, setShowActions] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const thumbnailInputRef = useRef<HTMLInputElement>(null)
 
   async function save() {
     setSaving(true)
     try {
+      console.log('[FeaturedVideoItem] Saving video:', {
+        id: video.id,
+        title,
+        display_date: displayDate || null
+      });
+      
       const res = await fetch(`/api/videos/${video.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description }),
+        body: JSON.stringify({ 
+          title, 
+          description, 
+          category,
+          display_date: displayDate || null
+        }),
       })
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
+        console.error('[FeaturedVideoItem] Save failed:', err);
         alert(`Failed to save: ${err.error || err.details || res.status}`)
         return
       }
 
+      const result = await res.json();
+      console.log('[FeaturedVideoItem] Save successful:', result);
+      console.log('[FeaturedVideoItem] Updated video display_date:', result.video?.display_date);
+      
+      // Check if date was requested but not saved
+      if (displayDate && !result.video?.display_date && result.warning) {
+        alert(
+          `Warning: Date field may not be saved. The display_date column doesn't exist in your Prisma Postgres database.\n\n` +
+          `To fix this, sync your Prisma schema:\n\n` +
+          `1. Run: npm run db:push\n` +
+          `2. Run: npm run db:generate\n` +
+          `3. Restart your dev server\n` +
+          `4. Try saving the date again\n\n` +
+          `See DEV_SETUP.md or PRISMA_SETUP.md for details.`
+        );
+      }
+      
+      // Update local state with the returned video data
+      if (result.video) {
+        const savedDate = result.video.display_date ? result.video.display_date.split('T')[0] : '';
+        console.log('[FeaturedVideoItem] Setting displayDate to:', savedDate);
+        setDisplayDate(savedDate);
+      }
+      
       setEditing(false)
-      onChanged()
+      // Force refresh the video list to get updated sorting
+      setTimeout(() => {
+        onChanged()
+      }, 300);
     } catch (error) {
+      console.error('[FeaturedVideoItem] Save error:', error);
       alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleThumbnailUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file')
+      return
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File too large. Maximum size is 10MB.')
+      return
+    }
+
+    setUploadingThumbnail(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch(`/api/videos/${video.id}/thumbnail`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(`Failed to upload thumbnail: ${err.error || err.details || res.status}`)
+        return
+      }
+
+      onChanged()
+    } catch (error) {
+      alert(`Failed to upload thumbnail: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setUploadingThumbnail(false)
+      if (thumbnailInputRef.current) {
+        thumbnailInputRef.current.value = ''
+      }
     }
   }
 
@@ -100,6 +206,48 @@ function FeaturedVideoItem({ video, onChanged, onVideoClick, videoRefs, onVideoL
             rows={4}
             placeholder="Video description (optional)"
           />
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+              Display Date (for sorting - most recent appears first)
+            </label>
+            <input
+              type="date"
+              value={displayDate}
+              onChange={(e) => setDisplayDate(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-sm text-gray-100 focus:outline-none focus:border-red-500"
+            />
+          </div>
+          <div className="flex gap-2 items-center flex-wrap">
+            <select
+              value={category || ''}
+              onChange={(e) => setCategory(e.target.value || null)}
+              className="px-3 py-2 bg-gray-800 border border-gray-600 rounded text-sm text-gray-100 focus:outline-none focus:border-red-500"
+            >
+              {CATEGORIES.map(cat => (
+                <option key={cat.value || 'null'} value={cat.value || ''}>
+                  {cat.label}
+                </option>
+              ))}
+            </select>
+            <label className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded text-sm flex items-center gap-2 cursor-pointer disabled:opacity-50">
+              <Image className="w-4 h-4" />
+              {uploadingThumbnail ? 'Uploading...' : 'Thumbnail'}
+              <input
+                ref={thumbnailInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleThumbnailUpload}
+                className="hidden"
+                disabled={uploadingThumbnail}
+              />
+            </label>
+            {video.thumbnail_url && (
+              <div className="flex items-center gap-2 text-xs text-gray-400">
+                <img src={video.thumbnail_url} alt="Thumbnail" className="w-8 h-8 object-cover rounded" />
+                <span>Has thumbnail</span>
+              </div>
+            )}
+          </div>
           <div className="flex gap-2">
             <button
               disabled={saving}
@@ -115,6 +263,8 @@ function FeaturedVideoItem({ video, onChanged, onVideoClick, videoRefs, onVideoL
                 setEditing(false)
                 setTitle(video.title)
                 setDescription(video.description ?? '')
+                setCategory(video.category || null)
+                setDisplayDate(video.display_date ? video.display_date.split('T')[0] : '')
               }}
               className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-200 rounded text-sm flex items-center gap-2"
             >
@@ -136,16 +286,38 @@ function FeaturedVideoItem({ video, onChanged, onVideoClick, videoRefs, onVideoL
   }
 
   return (
-    <div className="flex-1 w-full lg:max-w-[70%]">
+    <div className="w-full">
       <div
-        className="group cursor-pointer relative"
+        className={`group cursor-pointer relative transition-all ${
+          isDragging ? 'opacity-50 scale-95' : ''
+        } ${isDragOver ? 'ring-2 ring-red-500 ring-offset-2 scale-105' : ''}`}
         onClick={onVideoClick}
         onMouseEnter={() => setShowActions(true)}
         onMouseLeave={() => setShowActions(false)}
         onTouchStart={() => setShowActions(true)}
+        draggable={isAdmin && onDragStart !== undefined}
+        onDragStart={(e) => {
+          if (onDragStart) {
+            onDragStart(video.id);
+            e.dataTransfer.effectAllowed = 'move';
+          }
+        }}
+        onDragOver={(e) => {
+          if (onDragOver) {
+            onDragOver(e, video.id);
+          }
+        }}
+        onDragLeave={onDragLeave}
+        onDrop={(e) => {
+          if (onDrop) {
+            onDrop(e, video.id);
+          }
+        }}
+        onDragEnd={onDragEnd}
       >
         {/* Featured Video Thumbnail */}
         <div className="relative aspect-video rounded-lg overflow-hidden mb-4 bg-black">
+          {/* BANDWIDTH-SAFE: Featured video - preload="none", only loads when user clicks */}
           {videoUrl ? (
             <>
               <video
@@ -159,7 +331,7 @@ function FeaturedVideoItem({ video, onChanged, onVideoClick, videoRefs, onVideoL
                 src={videoUrl}
                 poster={video.thumbnail_url || undefined}
                 className="w-full h-full object-cover"
-                preload={isMobile ? "metadata" : "auto"}
+                preload="none"
                 muted
                 playsInline
                 onLoadedMetadata={(e) => onVideoLoad(video.id, e)}
@@ -167,58 +339,14 @@ function FeaturedVideoItem({ video, onChanged, onVideoClick, videoRefs, onVideoL
                 onWaiting={() => setIsLoading(true)}
                 onCanPlay={() => setIsLoading(false)}
                 onPlaying={() => setIsLoading(false)}
-                onTouchStart={(e) => {
-                  // Mobile: Start loading on touch
+                onClick={(e) => {
+                  // Only load video when user explicitly clicks to play
                   const videoEl = e.currentTarget
                   if (videoEl.readyState < 2) {
                     videoEl.load()
                   }
-                }}
-                onMouseEnter={async (e) => {
-                  const videoEl = e.currentTarget
-                  if (!videoEl.isConnected) return
-                  
-                  // Start loading video data immediately on hover
-                  if (videoEl.readyState < 2) {
-                    videoEl.load()
-                  }
-                  
-                  try {
-                    // Wait for video to be ready to play
-                    if (videoEl.readyState < 3) {
-                      await new Promise((resolve) => {
-                        const handleCanPlay = () => {
-                          videoEl.removeEventListener("canplay", handleCanPlay)
-                          resolve(undefined)
-                        }
-                        videoEl.addEventListener("canplay", handleCanPlay)
-                        // Start loading immediately
-                        videoEl.load()
-                      })
-                    }
-                    
-                    if (videoEl.currentTime < 0.5) {
-                      videoEl.currentTime = 0.5
-                    }
-                    
-                    await videoEl.play()
-                  } catch (error: any) {
-                    // Silently handle AbortError
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  const videoEl = e.currentTarget
-                  if (!videoEl.isConnected) return
-                  
-                  requestAnimationFrame(() => {
-                    if (videoEl.isConnected) {
-                      try {
-                        videoEl.pause()
-                        videoEl.currentTime = 0
-                      } catch (error) {
-                        // Silently handle pause errors
-                      }
-                    }
+                  videoEl.play().catch((err) => {
+                    console.error("Play failed:", err)
                   })
                 }}
               />
@@ -277,9 +405,35 @@ function FeaturedVideoItem({ video, onChanged, onVideoClick, videoRefs, onVideoL
           )}
         </div>
 
-        {/* Edit/Delete Actions */}
+        {/* Edit/Delete/Reorder Actions */}
         {isAdmin && showActions && (
           <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+            {onReorder && (
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onReorder(video.id, 'up')
+                  }}
+                  disabled={!canMoveUp}
+                  className="p-1.5 bg-blue-900 hover:bg-blue-800 disabled:opacity-30 disabled:cursor-not-allowed rounded text-blue-200 hover:text-blue-100 transition-colors"
+                  title="Move up"
+                >
+                  <ChevronUp className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onReorder(video.id, 'down')
+                  }}
+                  disabled={!canMoveDown}
+                  className="p-1.5 bg-blue-900 hover:bg-blue-800 disabled:opacity-30 disabled:cursor-not-allowed rounded text-blue-200 hover:text-blue-100 transition-colors"
+                  title="Move down"
+                >
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+              </div>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -316,39 +470,136 @@ interface VideoItemProps {
   onVideoLoad: (videoId: number, event: React.SyntheticEvent<HTMLVideoElement>) => void
   onVideoError: (videoId: number, event: React.SyntheticEvent<HTMLVideoElement>) => void
   formatDate: (dateString: string) => string
+  onReorder?: (videoId: number, direction: 'up' | 'down') => void
+  canMoveUp?: boolean
+  canMoveDown?: boolean
+  isDragging?: boolean
+  isDragOver?: boolean
+  onDragStart?: (videoId: number) => void
+  onDragOver?: (e: React.DragEvent, videoId: number) => void
+  onDragLeave?: (e: React.DragEvent) => void
+  onDrop?: (e: React.DragEvent, videoId: number) => void
+  onDragEnd?: () => void
 }
 
-function VideoItem({ video, onChanged, onSelect, videoRefs, observerRef, onVideoLoad, onVideoError, formatDate }: VideoItemProps) {
+function VideoItem({ video, onChanged, onSelect, videoRefs, observerRef, onVideoLoad, onVideoError, formatDate, onReorder, canMoveUp, canMoveDown, isDragging, isDragOver, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd }: VideoItemProps) {
   const { isAdmin } = useAdmin()
   const isMobile = useIsMobile()
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(video.title)
   const [description, setDescription] = useState(video.description ?? '')
+  const [category, setCategory] = useState(video.category || null)
+  const [displayDate, setDisplayDate] = useState(video.display_date ? video.display_date.split('T')[0] : '')
   const [saving, setSaving] = useState(false)
+  const [uploadingThumbnail, setUploadingThumbnail] = useState(false)
   const [showActions, setShowActions] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const thumbnailInputRef = useRef<HTMLInputElement>(null)
 
   async function save() {
     setSaving(true)
     try {
+      console.log('[VideoItem] Saving video:', {
+        id: video.id,
+        title,
+        display_date: displayDate || null
+      });
+      
       const res = await fetch(`/api/videos/${video.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description }),
+        body: JSON.stringify({ 
+          title, 
+          description, 
+          category,
+          display_date: displayDate || null
+        }),
       })
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
+        console.error('[VideoItem] Save failed:', err);
         alert(`Failed to save: ${err.error || err.details || res.status}`)
         return
       }
 
+      const result = await res.json();
+      console.log('[VideoItem] Save successful:', result);
+      console.log('[VideoItem] Updated video display_date:', result.video?.display_date);
+      
+      // Check if date was requested but not saved
+      if (displayDate && !result.video?.display_date && result.warning) {
+        alert(
+          `Warning: Date field may not be saved. The display_date column doesn't exist in your Prisma Postgres database.\n\n` +
+          `To fix this, sync your Prisma schema:\n\n` +
+          `1. Run: npm run db:push\n` +
+          `2. Run: npm run db:generate\n` +
+          `3. Restart your dev server\n` +
+          `4. Try saving the date again\n\n` +
+          `See DEV_SETUP.md or PRISMA_SETUP.md for details.`
+        );
+      }
+      
+      // Update local state with the returned video data
+      if (result.video) {
+        const savedDate = result.video.display_date ? result.video.display_date.split('T')[0] : '';
+        console.log('[VideoItem] Setting displayDate to:', savedDate);
+        setDisplayDate(savedDate);
+      }
+      
       setEditing(false)
-      onChanged()
+      // Force refresh the video list to get updated sorting
+      setTimeout(() => {
+        onChanged()
+      }, 300);
     } catch (error) {
+      console.error('[VideoItem] Save error:', error);
       alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleThumbnailUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file')
+      return
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File too large. Maximum size is 10MB.')
+      return
+    }
+
+    setUploadingThumbnail(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch(`/api/videos/${video.id}/thumbnail`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(`Failed to upload thumbnail: ${err.error || err.details || res.status}`)
+        return
+      }
+
+      onChanged()
+    } catch (error) {
+      alert(`Failed to upload thumbnail: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setUploadingThumbnail(false)
+      if (thumbnailInputRef.current) {
+        thumbnailInputRef.current.value = ''
+      }
     }
   }
 
@@ -388,6 +639,45 @@ function VideoItem({ video, onChanged, onSelect, videoRefs, observerRef, onVideo
           rows={3}
           placeholder="Video description (optional)"
         />
+        <div>
+          <label className="block text-xs font-medium text-gray-300 mb-1">
+            Display Date (for sorting)
+          </label>
+          <input
+            type="date"
+            value={displayDate}
+            onChange={(e) => setDisplayDate(e.target.value)}
+            className="w-full px-2 py-1 bg-gray-800 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:border-red-500"
+          />
+        </div>
+        <div className="flex gap-2 items-center flex-wrap">
+          <select
+            value={category || ''}
+            onChange={(e) => setCategory(e.target.value || null)}
+            className="px-2 py-1 bg-gray-800 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:border-red-500"
+          >
+            {CATEGORIES.map(cat => (
+              <option key={cat.value || 'null'} value={cat.value || ''}>
+                {cat.label}
+              </option>
+            ))}
+          </select>
+          <label className="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50">
+            <Image className="w-3 h-3" />
+            {uploadingThumbnail ? 'Uploading...' : 'Thumbnail'}
+            <input
+              ref={thumbnailInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleThumbnailUpload}
+              className="hidden"
+              disabled={uploadingThumbnail}
+            />
+          </label>
+          {video.thumbnail_url && (
+            <img src={video.thumbnail_url} alt="Thumbnail" className="w-6 h-6 object-cover rounded" />
+          )}
+        </div>
         <div className="flex gap-2">
           <button
             disabled={saving}
@@ -397,18 +687,20 @@ function VideoItem({ video, onChanged, onSelect, videoRefs, observerRef, onVideo
             <Save className="w-3 h-3" />
             Save
           </button>
-          <button
-            disabled={saving}
-            onClick={() => {
-              setEditing(false)
-              setTitle(video.title)
-              setDescription(video.description ?? '')
-            }}
-            className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-200 rounded text-xs flex items-center justify-center gap-1"
-          >
-            <XCircle className="w-3 h-3" />
-            Cancel
-          </button>
+            <button
+              disabled={saving}
+              onClick={() => {
+                setEditing(false)
+                setTitle(video.title)
+                setDescription(video.description ?? '')
+                setCategory(video.category || null)
+                setDisplayDate(video.display_date ? video.display_date.split('T')[0] : '')
+              }}
+              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-200 rounded text-xs flex items-center justify-center gap-1"
+            >
+              <XCircle className="w-3 h-3" />
+              Cancel
+            </button>
           <button
             disabled={saving}
             onClick={remove}
@@ -424,13 +716,35 @@ function VideoItem({ video, onChanged, onSelect, videoRefs, observerRef, onVideo
 
   return (
     <div
-      className="group cursor-pointer flex gap-3 relative"
+      className={`group cursor-pointer flex gap-3 relative transition-all ${
+        isDragging ? 'opacity-50 scale-95' : ''
+      } ${isDragOver ? 'ring-2 ring-red-500 ring-offset-2 scale-105 bg-red-900/20' : ''}`}
       onClick={onSelect}
+      draggable={isAdmin && onDragStart !== undefined}
+      onDragStart={(e) => {
+        if (onDragStart) {
+          onDragStart(video.id);
+          e.dataTransfer.effectAllowed = 'move';
+        }
+      }}
+      onDragOver={(e) => {
+        if (onDragOver) {
+          onDragOver(e, video.id);
+        }
+      }}
+      onDragLeave={onDragLeave}
+      onDrop={(e) => {
+        if (onDrop) {
+          onDrop(e, video.id);
+        }
+      }}
+      onDragEnd={onDragEnd}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
       {/* Sidebar Video Thumbnail */}
       <div className="relative w-40 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-black">
+        {/* BANDWIDTH-SAFE: Grid video - preload="none", only loads when user clicks */}
         {videoUrl ? (
           <>
             <video
@@ -452,7 +766,7 @@ function VideoItem({ video, onChanged, onSelect, videoRefs, observerRef, onVideo
               src={videoUrl}
               poster={video.thumbnail_url || undefined}
               className="w-full h-full object-cover"
-              preload={isMobile ? "none" : "metadata"}
+              preload="none"
               muted
               playsInline
               onLoadedMetadata={(e) => onVideoLoad(video.id, e)}
@@ -460,58 +774,14 @@ function VideoItem({ video, onChanged, onSelect, videoRefs, observerRef, onVideo
               onWaiting={() => setIsLoading(true)}
               onCanPlay={() => setIsLoading(false)}
               onPlaying={() => setIsLoading(false)}
-              onTouchStart={(e) => {
-                // Mobile: Start loading on touch
+              onClick={(e) => {
+                // Only load video when user explicitly clicks to play
                 const videoEl = e.currentTarget
                 if (videoEl.readyState < 2) {
                   videoEl.load()
                 }
-              }}
-              onMouseEnter={async (e) => {
-                const videoEl = e.currentTarget
-                if (!videoEl.isConnected) return
-                
-                // Start loading video data immediately on hover
-                if (videoEl.readyState < 2) {
-                  videoEl.load()
-                }
-                
-                try {
-                  // Wait for video to be ready to play
-                  if (videoEl.readyState < 3) {
-                    await new Promise((resolve) => {
-                      const handleCanPlay = () => {
-                        videoEl.removeEventListener("canplay", handleCanPlay)
-                        resolve(undefined)
-                      }
-                      videoEl.addEventListener("canplay", handleCanPlay)
-                      // Start loading immediately
-                      videoEl.load()
-                    })
-                  }
-                  
-                  if (videoEl.currentTime < 0.5) {
-                    videoEl.currentTime = 0.5
-                  }
-                  
-                  await videoEl.play()
-                } catch (error: any) {
-                  // Silently handle AbortError
-                }
-              }}
-              onMouseLeave={(e) => {
-                const videoEl = e.currentTarget
-                if (!videoEl.isConnected) return
-                
-                requestAnimationFrame(() => {
-                  if (videoEl.isConnected) {
-                    try {
-                      videoEl.pause()
-                      videoEl.currentTime = 0
-                    } catch (error) {
-                      // Silently handle pause errors
-                    }
-                  }
+                videoEl.play().catch((err) => {
+                  console.error("Play failed:", err)
                 })
               }}
             />
@@ -562,9 +832,35 @@ function VideoItem({ video, onChanged, onSelect, videoRefs, observerRef, onVideo
         </div>
       </div>
 
-      {/* Edit/Delete Actions */}
+      {/* Edit/Delete/Reorder Actions */}
       {isAdmin && showActions && (
         <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+          {onReorder && (
+            <div className="flex flex-col gap-0.5">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onReorder(video.id, 'up')
+                }}
+                disabled={!canMoveUp}
+                className="p-1 bg-blue-900 hover:bg-blue-800 disabled:opacity-30 disabled:cursor-not-allowed rounded text-blue-200 hover:text-blue-100 transition-colors"
+                title="Move up"
+              >
+                <ChevronUp className="w-2.5 h-2.5" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onReorder(video.id, 'down')
+                }}
+                disabled={!canMoveDown}
+                className="p-1 bg-blue-900 hover:bg-blue-800 disabled:opacity-30 disabled:cursor-not-allowed rounded text-blue-200 hover:text-blue-100 transition-colors"
+                title="Move down"
+              >
+                <ChevronDown className="w-2.5 h-2.5" />
+              </button>
+            </div>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation()
@@ -598,6 +894,8 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
   const [loading, setLoading] = useState(true)
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null)
   const [isPlayerOpen, setIsPlayerOpen] = useState(false)
+  const [draggedVideoId, setDraggedVideoId] = useState<number | null>(null)
+  const [dragOverVideoId, setDragOverVideoId] = useState<number | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string | null>(initialCategory || null)
   const [showDebug, setShowDebug] = useState(false)
   const [debugLogs, setDebugLogs] = useState<DebugLog[]>([])
@@ -666,18 +964,33 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
       // TEMPORARILY DISABLED: Show all videos while we fix visibility
       // TODO: Re-enable after migration: loadedVideos = loadedVideos.filter((v: Video) => v.visible === true)
       
+      // Log video dates for debugging
+      console.log('[fetchVideos] Videos loaded with dates:', loadedVideos.map((v: Video) => ({
+        id: v.id,
+        title: v.title,
+        display_date: v.display_date,
+        created_at: v.created_at
+      })));
+      
       addDebugLog("success", `Loaded ${loadedVideos.length} videos (after filtering hidden)`, {
         videos: loadedVideos.map((v: Video) => ({
           id: v.id,
           title: v.title,
+          display_date: v.display_date,
           blob_url: v.blob_url?.substring(0, 50) + "...",
           video_url: v.video_url?.substring(0, 50) + "...",
         }))
       })
       setVideos(loadedVideos)
-      // Set first video as featured (always update when videos change)
+      // Set first video as featured (most recent by display_date or created_at)
+      // Videos are already sorted by getVideos (display_date DESC, then created_at DESC)
       if (loadedVideos.length > 0) {
-        setFeaturedVideo(loadedVideos[0])
+        console.log('[fetchVideos] Setting featured video:', {
+          id: loadedVideos[0].id,
+          title: loadedVideos[0].title,
+          display_date: loadedVideos[0].display_date
+        });
+        setFeaturedVideo(loadedVideos[0]) // First video is the most recent
       } else {
         setFeaturedVideo(null)
       }
@@ -689,17 +1002,19 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
     }
   }
 
-  // Preload featured video immediately when it changes
-  useEffect(() => {
-    if (featuredVideo) {
-      const videoEl = videoRefs.current.get(featuredVideo.id)
-      if (videoEl && videoEl.readyState === 0) {
-        // Start loading featured video immediately
-        videoEl.load()
-        addDebugLog("info", "Preloading featured video", { videoId: featuredVideo.id })
-      }
-    }
-  }, [featuredVideo])
+  // BANDWIDTH-SAFE: Removed aggressive featured video preloading
+  // Previously called videoEl.load() which downloaded full video file immediately
+  // Now videos use preload="none" and only load when user clicks to play
+  // This prevents downloading large video files for featured videos that may never be watched
+  // useEffect(() => {
+  //   if (featuredVideo) {
+  //     const videoEl = videoRefs.current.get(featuredVideo.id)
+  //     if (videoEl && videoEl.readyState === 0) {
+  //       // REMOVED: videoEl.load() - was causing bandwidth waste
+  //       // Videos now load only when user explicitly clicks to play
+  //     }
+  //   }
+  // }, [featuredVideo])
 
   const handleCategoryClick = (category: string) => {
     addDebugLog("info", "Category clicked", { category })
@@ -714,12 +1029,137 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
   }
 
   const handleVideoChanged = () => {
-    // Refetch videos after edit/delete
-    if (selectedCategory) {
-      fetchVideos(selectedCategory)
-    } else {
-      fetchVideos()
+    console.log('[VideoHomepage] handleVideoChanged called, refreshing video list...');
+    // Refetch videos after edit/delete to get updated sorting
+    // Add a small delay to ensure database has updated
+    setTimeout(() => {
+      if (selectedCategory) {
+        fetchVideos(selectedCategory)
+      } else {
+        fetchVideos()
+      }
+    }, 200);
+  }
+
+  const saveVideoOrder = async (videoIds: number[]) => {
+    if (!isAdmin) return;
+    
+    try {
+      const res = await fetch('/api/videos/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoIds }),
+      });
+      
+      if (!res.ok) {
+        let errorText = '';
+        let errorJson: any = {};
+        
+        try {
+          errorText = await res.text();
+          errorJson = JSON.parse(errorText);
+        } catch (parseError) {
+          // Response isn't JSON, use text
+          errorJson = { error: errorText || `HTTP ${res.status}` };
+        }
+        
+        console.error('Reorder API error:', {
+          status: res.status,
+          statusText: res.statusText,
+          errorJson,
+          errorText
+        });
+        
+        const errorMsg = errorJson.error || errorJson.details || res.statusText || `HTTP ${res.status}`;
+        const details = errorJson.details || errorJson.errorCode || '';
+        alert(`Failed to reorder: ${errorMsg}${details ? `\n\nDetails: ${details}` : ''}`);
+        return;
+      }
+      
+      const result = await res.json();
+      console.log('Reorder successful:', result);
+      
+      // Refresh videos to get updated order
+      handleVideoChanged();
+    } catch (error) {
+      console.error('Reorder error:', error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      alert(`Failed to reorder: ${errorMsg}`);
     }
+  }
+
+  const handleReorder = async (videoId: number, direction: 'up' | 'down') => {
+    if (!isAdmin) return;
+    
+    const currentIndex = videos.findIndex(v => v.id === videoId);
+    if (currentIndex === -1) return;
+    
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (newIndex < 0 || newIndex >= videos.length) return;
+    
+    // Create new order array
+    const newOrder = [...videos];
+    [newOrder[currentIndex], newOrder[newIndex]] = [newOrder[newIndex], newOrder[currentIndex]];
+    
+    // Update sort_order for all videos
+    const videoIds = newOrder.map(v => v.id);
+    await saveVideoOrder(videoIds);
+  }
+
+  // Drag and drop handlers
+  const handleDragStart = (videoId: number) => {
+    if (!isAdmin) return;
+    setDraggedVideoId(videoId);
+  }
+
+  const handleDragOver = (e: React.DragEvent, videoId: number) => {
+    if (!isAdmin || !draggedVideoId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (videoId !== draggedVideoId) {
+      setDragOverVideoId(videoId);
+    }
+  }
+
+  const handleDragLeave = () => {
+    setDragOverVideoId(null);
+  }
+
+  const handleDrop = async (e: React.DragEvent, targetVideoId: number) => {
+    if (!isAdmin || !draggedVideoId) return;
+    e.preventDefault();
+    
+    if (draggedVideoId === targetVideoId) {
+      setDraggedVideoId(null);
+      setDragOverVideoId(null);
+      return;
+    }
+
+    const draggedIndex = videos.findIndex(v => v.id === draggedVideoId);
+    const targetIndex = videos.findIndex(v => v.id === targetVideoId);
+    
+    if (draggedIndex === -1 || targetIndex === -1) {
+      setDraggedVideoId(null);
+      setDragOverVideoId(null);
+      return;
+    }
+
+    // Create new order array
+    const newOrder = [...videos];
+    const [draggedVideo] = newOrder.splice(draggedIndex, 1);
+    newOrder.splice(targetIndex, 0, draggedVideo);
+    
+    // Update sort_order for all videos
+    const videoIds = newOrder.map(v => v.id);
+    await saveVideoOrder(videoIds);
+    
+    setDraggedVideoId(null);
+    setDragOverVideoId(null);
+  }
+
+  const handleDragEnd = () => {
+    setDraggedVideoId(null);
+    setDragOverVideoId(null);
   }
 
   const handleAddVideo = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -1032,16 +1472,6 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
                 All
               </a>
               <a
-                href="/videos?category=recent-work"
-                className={`px-3 py-1 rounded-full text-sm transition-colors ${
-                  selectedCategory === "recent-work"
-                    ? "bg-red-500 text-white"
-                    : "text-gray-200 hover:bg-white/10"
-                }`}
-              >
-                Recent Work
-              </a>
-              <a
                 href="/videos?category=music-video"
                 className={`px-3 py-1 rounded-full text-sm transition-colors ${
                   selectedCategory === "music-video"
@@ -1070,6 +1500,26 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
                 }`}
               >
                 Clothing
+              </a>
+              <a
+                href="/videos?category=live-events"
+                className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                  selectedCategory === "live-events"
+                    ? "bg-red-500 text-white"
+                    : "text-gray-200 hover:bg-white/10"
+                }`}
+              >
+                LIVE EVENTS
+              </a>
+              <a
+                href="/videos?category=bts"
+                className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                  selectedCategory === "bts"
+                    ? "bg-red-500 text-white"
+                    : "text-gray-200 hover:bg-white/10"
+                }`}
+              >
+                BTS
               </a>
             </nav>
           </div>
@@ -1160,11 +1610,11 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-sm text-gray-100 focus:outline-none focus:border-red-500"
                 >
                   <option value="">None</option>
-                  <option value="recent-work">Recent Work</option>
                   <option value="music-video">Music</option>
                   <option value="industry-work">Launch Videos</option>
                   <option value="clothing">Clothing</option>
-                  <option value="narrative">Narrative</option>
+                  <option value="live-events">LIVE EVENTS</option>
+                  <option value="bts">BTS</option>
                 </select>
               </div>
 
@@ -1245,52 +1695,71 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
               <p className="text-sm text-gray-400">
                 {selectedCategory 
                   ? `No videos in "${selectedCategory}" category`
-                  : "Upload videos in the admin panel"}
+                  : "No videos available"}
               </p>
-              <a
-                href="/admin"
-                className="inline-block mt-4 px-4 py-2 text-sm text-gray-900 rounded-full transition-colors hover:bg-yellow-300"
-                style={{ backgroundColor: '#FBBF24' }}
-              >
-                Go to Admin
-              </a>
             </div>
           </div>
         ) : (
-          <div className="flex flex-col lg:flex-row gap-6">
-            {/* Featured Video (Left Side - Larger) */}
-            {featuredVideo && (
-              <FeaturedVideoItem
-                video={featuredVideo}
-                onChanged={handleVideoChanged}
-                onVideoClick={() => handleVideoClick(featuredVideo)}
-                videoRefs={videoRefs}
-                onVideoLoad={handleVideoLoad}
-                onVideoError={handleVideoError}
-                formatDate={formatDate}
-              />
-            )}
+          <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
+            {/* Main Video Area (YouTube-style - Larger) */}
+            <div className="flex-1 lg:max-w-[70%]">
+              {featuredVideo && (
+                <FeaturedVideoItem
+                  video={featuredVideo}
+                  onChanged={handleVideoChanged}
+                  onVideoClick={() => handleVideoClick(featuredVideo)}
+                  videoRefs={videoRefs}
+                  onVideoLoad={handleVideoLoad}
+                  onVideoError={handleVideoError}
+                  formatDate={formatDate}
+                  onReorder={isAdmin ? handleReorder : undefined}
+                  canMoveUp={videos.findIndex(v => v.id === featuredVideo.id) > 0}
+                  canMoveDown={videos.findIndex(v => v.id === featuredVideo.id) < videos.length - 1}
+                  isDragging={draggedVideoId === featuredVideo.id}
+                  isDragOver={dragOverVideoId === featuredVideo.id}
+                  onDragStart={isAdmin ? handleDragStart : undefined}
+                  onDragOver={isAdmin ? handleDragOver : undefined}
+                  onDragLeave={isAdmin ? handleDragLeave : undefined}
+                  onDrop={isAdmin ? handleDrop : undefined}
+                  onDragEnd={isAdmin ? handleDragEnd : undefined}
+                />
+              )}
+            </div>
 
-            {/* Sidebar Videos (Right Side - Smaller, Vertical) */}
-            <div className="lg:w-[30%] space-y-3">
+            {/* Sidebar Videos (Right Side - YouTube-style sidebar) */}
+            <div className="lg:w-[30%] lg:max-w-[400px] space-y-3">
+              <h3 className="text-sm font-semibold text-gray-300 mb-3 hidden lg:block">Up Next</h3>
               {videos
                 .filter((video) => video.id !== featuredVideo?.id)
-                .map((video) => (
-                  <VideoItem
-                    key={video.id}
-                    video={video}
-                    onChanged={handleVideoChanged}
-                    onSelect={() => {
-                      setFeaturedVideo(video)
-                      handleVideoClick(video)
-                    }}
-                    videoRefs={videoRefs}
-                    observerRef={observerRef}
-                    onVideoLoad={handleVideoLoad}
-                    onVideoError={handleVideoError}
-                    formatDate={formatDate}
-                  />
-                ))}
+                .map((video, index) => {
+                  const actualIndex = videos.findIndex(v => v.id === video.id);
+                  return (
+                    <VideoItem
+                      key={video.id}
+                      video={video}
+                      onChanged={handleVideoChanged}
+                      onSelect={() => {
+                        setFeaturedVideo(video)
+                        handleVideoClick(video)
+                      }}
+                      videoRefs={videoRefs}
+                      observerRef={observerRef}
+                      onVideoLoad={handleVideoLoad}
+                      onVideoError={handleVideoError}
+                      formatDate={formatDate}
+                      onReorder={isAdmin ? handleReorder : undefined}
+                      canMoveUp={actualIndex > 0}
+                      canMoveDown={actualIndex < videos.length - 1}
+                      isDragging={draggedVideoId === video.id}
+                      isDragOver={dragOverVideoId === video.id}
+                      onDragStart={isAdmin ? handleDragStart : undefined}
+                      onDragOver={isAdmin ? handleDragOver : undefined}
+                      onDragLeave={isAdmin ? handleDragLeave : undefined}
+                      onDrop={isAdmin ? handleDrop : undefined}
+                      onDragEnd={isAdmin ? handleDragEnd : undefined}
+                    />
+                  );
+                })}
             </div>
           </div>
         )}
@@ -1305,6 +1774,22 @@ export function VideoHomepage({ initialCategory }: VideoHomepageProps = {}) {
           onClose={() => {
             setIsPlayerOpen(false)
             setSelectedVideo(null)
+          }}
+          allVideos={videos}
+          currentVideoIndex={videos.findIndex(v => v.id === selectedVideo.id)}
+          onNextVideo={() => {
+            const currentIndex = videos.findIndex(v => v.id === selectedVideo.id)
+            if (currentIndex < videos.length - 1) {
+              const nextVideo = videos[currentIndex + 1]
+              setSelectedVideo(nextVideo)
+            }
+          }}
+          onPrevVideo={() => {
+            const currentIndex = videos.findIndex(v => v.id === selectedVideo.id)
+            if (currentIndex > 0) {
+              const prevVideo = videos[currentIndex - 1]
+              setSelectedVideo(prevVideo)
+            }
           }}
         />
       )}
