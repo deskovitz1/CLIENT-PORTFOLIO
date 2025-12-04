@@ -75,3 +75,4 @@ After running the migration, try saving a video date again. The warning should d
 - Verify the column exists: `SELECT column_name FROM information_schema.columns WHERE table_name = 'videos' AND column_name = 'display_date';`
 
 
+

@@ -118,3 +118,4 @@ To verify these optimizations are working:
 - Video playback: Only when user explicitly plays (as intended)
 
 
+

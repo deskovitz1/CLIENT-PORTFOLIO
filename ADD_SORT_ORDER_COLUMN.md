@@ -29,3 +29,4 @@ ALTER TABLE videos ADD COLUMN sort_order INTEGER DEFAULT 0;
 After running the SQL, try reordering videos again.
 
 
+

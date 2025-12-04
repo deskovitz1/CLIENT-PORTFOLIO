@@ -16,3 +16,4 @@ ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT true;
 CREATE INDEX IF NOT EXISTS idx_videos_is_visible ON videos(is_visible);
 
 
+
